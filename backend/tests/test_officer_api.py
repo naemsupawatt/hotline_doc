@@ -575,3 +575,67 @@ def test_license_endpoint_reports_clearly_when_nothing_issued_yet(client, owner)
     res = client.get(f"/api/v1/applications/{no}/license", headers=auth(owner))
     assert res.status_code == 404
     assert "ยังไม่ได้ออกเอกสาร" in res.json()["detail"]
+
+
+# ---------------------------------------------------------------- M11 ภาพรวม
+
+
+def test_m11_overview_counts_by_type_authority_and_stuck_step(client, owner, officer_a):
+    """M11: "จำนวนคำขอแยกตามประเภทและตามท้องถิ่น และคำขอค้างอยู่ที่ขั้นตอนใดบ้าง" """
+    waiting = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, waiting)
+
+    revising = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, revising)
+    client.post(
+        f"/api/v1/officer/applications/{revising}/decide",
+        headers=auth(officer_a),
+        json={"decision": "request_revision", "reason": "ขอเอกสารเพิ่ม"},
+    )
+
+    central = client.post(
+        "/api/v1/auth/login",
+        json={"identifier": "central@example.com", "password": "demo1234"},
+    ).json()["access_token"]
+
+    body = client.get("/api/v1/reports/overview", headers=auth(central)).json()
+
+    assert body["waiting_on_officer"] >= 1
+    assert body["waiting_on_applicant"] >= 1
+
+    # แยกตามประเภท: ต้องมีครบทุกประเภทแม้ประเภทที่ยังไม่มีคำขอ
+    codes = [b["key"] for b in body["by_property_type"]]
+    assert {"not_hotel", "type_1", "type_2", "out_of_scope"} <= set(codes)
+
+    # ค้างที่ขั้นตอนใด: ต้องครบทุกสถานะ เพื่อให้เห็นว่าขั้นไหนเป็นศูนย์ด้วย
+    statuses = [b["key"] for b in body["by_status"]]
+    assert "submitted" in statuses and "needs_revision" in statuses
+
+    # แยกตามท้องถิ่น: ต้องครบ 19 แห่ง รวมแห่งที่ยังไม่มีคำขอ
+    assert len(body["by_authority"]) == 19
+    names = [r["name"] for r in body["by_authority"]]
+    assert "เทศบาลนครภูเก็ต" in names
+
+
+def test_m11_is_read_only_summary_without_personal_data(client, owner, officer_a):
+    """ส่วนกลาง "ดูภาพรวมโดยไม่ก้าวก่ายการพิจารณารายคำขอ" (ตารางข้อ 5)
+
+    รายงานจึงต้องไม่มีเลขที่คำขอ ชื่อผู้ยื่น หรือชื่อเจ้าหน้าที่หลุดออกไป
+    """
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    central = client.post(
+        "/api/v1/auth/login",
+        json={"identifier": "central@example.com", "password": "demo1234"},
+    ).json()["access_token"]
+
+    raw = client.get("/api/v1/reports/overview", headers=auth(central)).text
+    assert no not in raw, "เลขที่คำขอต้องไม่หลุดไปในรายงานภาพรวม"
+    assert "ที่พักเขต" not in raw, "ชื่อสถานที่ต้องไม่หลุดไปในรายงานภาพรวม"
+
+
+def test_m11_is_restricted_to_central_and_admin(client, owner, officer_a):
+    assert client.get("/api/v1/reports/overview", headers=auth(owner)).status_code == 403
+    assert client.get("/api/v1/reports/overview", headers=auth(officer_a)).status_code == 403
+    assert client.get("/api/v1/reports/overview").status_code == 401

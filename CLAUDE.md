@@ -114,7 +114,22 @@ brand asset แปลงเป็น WebP แล้ว, enums สถานะท
 - alembic autogenerate ใส่ `postgresql_nulls_not_distinct` (PG 15+) บนเครื่อง PG 14 → ลบทิ้งทุกครั้ง
 - เทสต์ที่ใช้อีเมลชุดเดียวกันแล้วลบระหว่างเคส ทำให้ล้มแบบสุ่ม — ให้แต่ละเคสมีผู้ใช้ของตัวเอง
 
-**ยังไม่เริ่ม:** endpoint กลุ่ม reports/admin
+**M10/M11 เสร็จแล้ว (19 ก.ย. ค่ำ) — Must Have ครบ 11 ข้อ:**
+- M10 ออกเอกสารได้สองชนิดในตาราง `license` เดียว แยกด้วย `kind`
+  `license` (ประเภท 1/2 มีค่าธรรมเนียม 5 ปี) / `notice_receipt` (ไม่เข้าข่าย ไม่มีค่าธรรมเนียม ไม่หมดอายุ)
+  snapshot ทั้ง `fee_schedule_id` และ `fee_amount` ตามข้อควรคิดข้อ 1 ของโจทย์ข้อ 8
+  หน้าพิมพ์ใช้ `window.print()` + คลาส `print:` ไม่ได้สร้าง PDF ฝั่งเซิร์ฟเวอร์
+- M11 `GET /reports/overview` (central + super_admin) คืนเฉพาะตัวเลขรวม
+  ไม่มีเลขที่คำขอ ชื่อผู้ยื่น หรือชื่อเจ้าหน้าที่ — มีเทสต์ยืนยันว่าไม่หลุด
+- `AppNav` แถบนำทางร่วม เมนูเปลี่ยนตามบทบาท ใส่เฉพาะหน้าที่สร้างแล้วจริง
+- เทสต์ backend 137 เคส
+
+**หน้าจอที่มีตอนนี้:** `/login` `/register` `/operator/wizard`
+`/operator/applications` `/operator/applications/[no]` `/operator/applications/[no]/license`
+`/officer/queue` `/officer/applications/[no]` `/central/overview`
+
+**ยังไม่เริ่ม:** endpoint กลุ่ม admin (US-09 หน้าแก้กฎ), Should/Could Have ทั้งหมด,
+deliverable ข้อ 1 (requirements.md) ข้อ 3 (wireframes) ข้อ 5 (test-cases.md) ข้อ 6 (สไลด์)
 (ยังเป็น stub), หน้าจอของผู้ประกอบการ/เจ้าหน้าที่/ส่วนกลางทั้งหมด,
 seed เอกสาร A01–A08/B01–B07, เอกสารส่งมอบข้อ 1/3/5/6
 
