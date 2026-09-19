@@ -1,6 +1,5 @@
 import {
   Building2,
-  Check,
   CircleQuestionMark,
   FileCheck2,
   MapPin,
@@ -8,7 +7,7 @@ import {
 } from "lucide-react";
 
 import { Logo, PrototypeBadge } from "@/components/brand/Logo";
-import { Mascot } from "@/components/brand/Mascot";
+import { Illustration } from "@/components/brand/Illustration";
 
 type Props = {
   headline: React.ReactNode;
@@ -93,42 +92,47 @@ function BrandPanel({
         aria-hidden
         className="auth-orbit absolute -bottom-16 -left-16 size-72"
       />
-      <div className="relative flex h-full flex-col px-6 py-7 sm:p-10 lg:p-12">
-        <p className="mb-5 flex items-center gap-2 text-xs font-semibold text-brand-700">
-          <MapPin className="size-4" aria-hidden />
-          สำหรับผู้ประกอบการที่พัก จังหวัดภูเก็ต
-        </p>
-        <h2 className="text-3xl leading-snug font-bold tracking-tight text-navy-900 lg:text-4xl">
-          {headline}
-        </h2>
-        <p className="mt-4 text-sm leading-relaxed text-brand-700 sm:text-base">
-          {tagline}
-        </p>
-        <div className="mt-8 hidden space-y-5 md:block">
-          {features.map(({ icon: Icon, title, text }) => (
-            <div key={title} className="flex items-start gap-3">
-              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface/80 text-brand-600">
-                <Icon className="size-5" aria-hidden />
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-navy-700">{title}</p>
-                <p className="mt-0.5 text-xs text-ink-muted">{text}</p>
+      <div className="relative flex h-full flex-col">
+        <div className="px-6 py-7 sm:px-10 sm:pt-10 sm:pb-6 lg:px-12">
+          <p className="mb-5 flex items-center gap-2 text-xs font-semibold text-brand-700">
+            <MapPin className="size-4" aria-hidden />
+            สำหรับผู้ประกอบการที่พัก จังหวัดภูเก็ต
+          </p>
+          <h2 className="text-3xl leading-snug font-bold tracking-tight text-navy-900 lg:text-4xl">
+            {headline}
+          </h2>
+          <p className="mt-4 text-sm leading-relaxed text-brand-700 sm:text-base">
+            {tagline}
+          </p>
+          <div className="mt-7 hidden space-y-4 md:block">
+            {features.map(({ icon: Icon, title, text }) => (
+              <div key={title} className="flex items-start gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface/80 text-brand-600">
+                  <Icon className="size-5" aria-hidden />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-navy-700">{title}</p>
+                  <p className="mt-0.5 text-xs text-ink-muted">{text}</p>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-        <div className="relative mt-auto hidden justify-center pt-8 md:flex">
-          <Mascot
-            pose="wave"
-            size="lg"
-            className="relative w-44 lg:w-52"
-            priority
+        <figure className="relative mt-auto hidden md:block">
+          <figcaption className="relative z-10 mx-8 text-center">
+            <p className="text-sm font-semibold text-brand-700">
+              ที่พักที่ดี เริ่มได้จากความเข้าใจ
+            </p>
+            <p className="mt-1 text-xs text-ink-muted">
+              พร้อมเติบโตไปกับชุมชนอย่างยั่งยืน
+            </p>
+          </figcaption>
+          <Illustration
+            scene="hotel-garden"
+            sizes="(min-width: 1152px) 516px, 48vw"
+            className="illustration-edge-fade -mt-6"
           />
-          <span className="absolute right-0 bottom-4 flex items-center gap-2 rounded-xl border border-brand-100 bg-surface/95 px-3 py-2.5 text-xs font-medium text-brand-700 shadow-card">
-            <Check className="size-4" aria-hidden />
-            เริ่มต้นอย่างมั่นใจ
-          </span>
-        </div>
+        </figure>
       </div>
     </section>
   );

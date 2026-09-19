@@ -17,7 +17,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { Mascot } from "@/components/brand/Mascot";
+import { Illustration } from "@/components/brand/Illustration";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SectionCard } from "@/components/common/SectionCard";
 import { Stepper } from "@/components/common/Stepper";
@@ -344,23 +344,38 @@ function ResultPanel({ result }: { result: ClassifyResult | null }) {
 
 function EmptyResult() {
   return (
-    <aside className="rounded-card border border-brand-100 bg-brand-50 p-6 sm:p-7">
-      <p className="text-xs font-semibold text-brand-700">เริ่มต้นอย่างมั่นใจ</p>
-      <h2 className="mt-2 text-2xl font-bold text-navy-900">เรื่องเอกสารที่พัก<br />ให้เราช่วยวางแผน</h2>
-      <p className="mt-3 text-sm leading-relaxed text-ink-muted">กรอกข้อมูลที่พักของคุณ แล้วระบบจะสรุปแนวทางที่เหมาะกับที่พักให้ในขั้นตอนถัดไป</p>
-      <div className="mt-5 space-y-3 rounded-xl border border-brand-100 bg-surface/90 p-4">
-        {[
-          { icon: Building2, text: "รู้ว่าที่พักเข้าข่ายประเภทใด" },
-          { icon: FileText, text: "เห็นรายการเอกสารที่ต้องเตรียม" },
-          { icon: Landmark, text: "รู้จุดติดต่อหน่วยงานที่เกี่ยวข้อง" },
-        ].map(({ icon: ItemIcon, text }) => {
-          return <p key={text} className="flex items-center gap-3 text-sm text-navy-700"><ItemIcon className="size-5 shrink-0 text-brand-600" aria-hidden />{text}</p>;
-        })}
+    <aside className="overflow-hidden rounded-card border border-brand-100 bg-brand-50">
+      <div className="px-6 pt-6 sm:px-7 sm:pt-7">
+        <p className="text-xs font-semibold text-brand-700">เริ่มต้นอย่างมั่นใจ</p>
+        <h2 className="mt-2 text-2xl font-bold text-navy-900">
+          เรื่องเอกสารที่พัก<br />ให้เราช่วยวางแผน
+        </h2>
+        <p className="mt-3 text-sm leading-relaxed text-ink-muted">
+          กรอกข้อมูลที่พักของคุณ แล้วระบบจะสรุปแนวทางที่เหมาะกับที่พักให้ในขั้นตอนถัดไป
+        </p>
+        <div className="mt-5 space-y-3 rounded-xl border border-brand-100 bg-surface/90 p-4">
+          {[
+            { icon: Building2, text: "รู้ว่าที่พักเข้าข่ายประเภทใด" },
+            { icon: FileText, text: "เห็นรายการเอกสารที่ต้องเตรียม" },
+            { icon: Landmark, text: "รู้จุดติดต่อหน่วยงานที่เกี่ยวข้อง" },
+          ].map(({ icon: ItemIcon, text }) => (
+            <p key={text} className="flex items-center gap-3 text-sm text-navy-700">
+              <ItemIcon className="size-5 shrink-0 text-brand-600" aria-hidden />
+              {text}
+            </p>
+          ))}
+        </div>
       </div>
-      <div className="mt-5 flex items-center justify-center gap-4">
-        <Mascot pose="wave" size="md" className="w-28" />
-        <p className="text-sm leading-relaxed font-medium text-brand-700">เอกสารพร้อม<br />ก้าวต่อได้อย่างมั่นใจ</p>
-      </div>
+      <figure className="mt-5">
+        <figcaption className="relative z-10 px-6 text-center text-sm font-medium text-brand-700">
+          เริ่มต้นถูกต้อง ธุรกิจที่พักของคุณไปได้ไกลกว่าเดิม
+        </figcaption>
+        <Illustration
+          scene="hotel-garden"
+          sizes="(min-width: 1280px) 490px, (min-width: 1024px) 720px, (min-width: 640px) 90vw, calc(100vw - 32px)"
+          className="illustration-edge-fade -mt-4"
+        />
+      </figure>
     </aside>
   );
 }

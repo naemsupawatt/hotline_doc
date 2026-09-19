@@ -66,6 +66,11 @@ body {
 .auth-panel { background: linear-gradient(145deg, var(--color-brand-50), var(--color-brand-100)); }
 .auth-orbit { border: 1px solid var(--color-brand-200); border-radius: 50%; }
 
+/* ทำให้ขอบภาพกลืนกับพื้นการ์ด โดยเก็บข้อความจริงไว้นอกภาพ */
+.illustration-edge-fade {
+  mask-image: linear-gradient(to bottom, transparent, var(--color-ink) 24%);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; }
 }

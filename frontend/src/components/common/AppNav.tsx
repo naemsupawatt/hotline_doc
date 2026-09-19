@@ -6,7 +6,6 @@ import {
   ChartNoAxesCombined,
   ClipboardList,
   FileCheck2,
-  Leaf,
   LogOut,
   Menu,
   Settings2,
@@ -17,6 +16,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useSyncExternalStore } from "react";
 
 import { Logo } from "@/components/brand/Logo";
+import { Illustration } from "@/components/brand/Illustration";
 import { type AuthUser, logout } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/types/enums";
@@ -177,7 +177,7 @@ export function AppNav() {
           </nav>
         )}
       </header>
-      <aside className="app-sidebar fixed bottom-0 left-0 top-20 hidden w-56 flex-col border-r border-line px-4 py-7 lg:flex print:hidden">
+      <aside className="app-sidebar fixed bottom-0 left-0 top-20 hidden w-56 flex-col overflow-y-auto border-r border-line px-4 py-7 lg:flex print:hidden">
         <p className="mb-4 px-3 text-xs font-semibold tracking-wide text-ink-muted">
           พื้นที่การทำงาน
         </p>
@@ -187,18 +187,22 @@ export function AppNav() {
           ))}
         </nav>
         <div className="mt-auto pt-10">
-          <div className="rounded-2xl border border-brand-100 bg-surface/70 p-4">
-            <Leaf className="mb-3 size-6 text-brand-600" aria-hidden />
-            <p className="text-sm font-semibold leading-relaxed text-navy-700">
+          <div className="overflow-hidden rounded-2xl border border-brand-100 bg-surface/70 pt-5 text-center">
+            <p className="px-3 text-sm font-semibold leading-relaxed text-navy-700">
               ที่พักที่ดี
               <br />
               เริ่มต้นจากความพร้อม
             </p>
-            <p className="mt-2 text-xs leading-relaxed text-ink-muted">
+            <p className="mt-2 px-3 text-xs leading-relaxed text-ink-muted">
               เตรียมเอกสารอย่างมั่นใจ
               <br />
               เพื่อการท่องเที่ยวที่ยั่งยืน
             </p>
+            <Illustration
+              scene="coastal-community"
+              sizes="192px"
+              className="mt-3"
+            />
           </div>
           <p className="mt-5 px-2 text-xs text-ink-muted">
             HoTLinE Doc · จังหวัดภูเก็ต

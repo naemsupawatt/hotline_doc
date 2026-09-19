@@ -36,6 +36,7 @@ export function MyApplicationsView() {
     <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
       <PageHeader
         eyebrow="คำขอของฉัน"
+        illustration="hotel-sketch"
         title="ติดตามคำขอของคุณ"
         description="ดูว่าแต่ละคำขออยู่ขั้นตอนใด และรออยู่กี่วันแล้ว"
         aside={

@@ -54,6 +54,7 @@ export function OverviewView() {
     <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
       <PageHeader
         eyebrow="ภาพรวมส่วนกลาง"
+        illustration="coastal-community"
         title="เห็นปัญหา เพื่อปรับปรุงบริการ"
         description="สรุปสถานการณ์คำขอจากทุกพื้นที่ในจังหวัดภูเก็ต เพื่อให้เห็นว่าติดขัดที่ขั้นตอนใด"
       />
