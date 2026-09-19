@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+/* ============================================================
+   HoTLinE Doc — Design Tokens
+   ค่าสีดึงมาจากไฟล์โลโก้จริง (example_ui/logo.png)
+   แก้ที่นี่ที่เดียว ห้ามเขียนสีดิบ (#xxxxxx) ในคอมโพเนนต์
+   ============================================================ */
+@theme {
+  /* teal จากหลังคาบ้าน/คำว่า "Doc" ในโลโก้ */
+  --color-brand-50:  #F0FBF9;
+  --color-brand-100: #C8EDE2;   /* mint จากมุมพับกระดาษ */
+  --color-brand-200: #9BDDD6;
+  --color-brand-400: #00A6A6;   /* hover */
+  --color-brand-500: #009494;   /* ปุ่มหลัก / active / แบรนด์ */
+  --color-brand-600: #087F84;
+  --color-brand-700: #0B6C72;   /* หัวข้อเข้ม */
+
+  /* navy จาก wordmark "HoTLinE" และเส้นขอบมาสคอต */
+  --color-navy-900: #0D2344;
+  --color-navy-700: #1C3A5E;
+
+  /* พื้นผิว */
+  --color-canvas:    #F8FAFB;   /* พื้นหลังหน้า */
+  --color-surface:   #FFFFFF;   /* การ์ด */
+  --color-line:      #E3E9EE;   /* เส้นขอบการ์ด */
+  --color-ink:       #0D2344;   /* ตัวอักษรหลัก = navy จากโลโก้ */
+  --color-ink-muted: #5A6B7B;   /* คำอธิบายใต้หัวข้อ */
+
+  /* สถานะ — ใช้คู่กับ DocumentStatus ฝั่ง backend */
+  --color-info-bg:    #E8F2FB;  --color-info-fg:    #2C6FB5;
+  --color-success-bg: #E7F6EC;  --color-success-fg: #1E9E5A;
+  --color-warn-bg:    #FFF4E0;  --color-warn-fg:    #E08A1E;
+  --color-danger-bg:  #FDECEC;  --color-danger-fg:  #D93F3F;
+  --color-review-bg:  #F1ECFD;  --color-review-fg:  #7A5AF8;
+
+  --radius-card: 1rem;
+  --font-sans: var(--font-thai), ui-sans-serif, system-ui, sans-serif;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* NFR Accessibility: โฟกัสต้องมองเห็นชัดเมื่อใช้คีย์บอร์ด */
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
+
+/* M10: ใบอนุญาตต้องพิมพ์ออกมาได้ — ซ่อน nav/ปุ่มตอนสั่งพิมพ์ */
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+}

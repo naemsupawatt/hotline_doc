@@ -1,0 +1,27 @@
+# ---- Node / Next ----
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# ---- Python ----
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# ---- ความลับและข้อมูลเฉพาะเครื่อง ----
+.env
+.env.local
+*.local
+
+# ---- ไฟล์ที่ผู้ใช้อัปโหลด (ห้าม commit) ----
+backend/storage/*
+!backend/storage/.gitkeep
+
+# ---- ระบบปฏิบัติการ / เครื่องมือ ----
+.DS_Store
+Thumbs.db
+*.log
