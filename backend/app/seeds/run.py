@@ -10,9 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
+from app.core.security import hash_password
 from app.models.authority import LocalAuthority
 from app.models.classification import ClassificationRule, PropertyType
 from app.models.license import FeeSchedule
+from app.models.user import OfficerAssignment, User
 from app.seeds.classification import (
     CLASSIFICATION_RULES,
     EFFECTIVE_FROM,
@@ -20,6 +22,7 @@ from app.seeds.classification import (
     PROPERTY_TYPES,
 )
 from app.seeds.local_authorities import LOCAL_AUTHORITIES
+from app.seeds.users import DEMO_PASSWORD, DEMO_USERS
 
 
 def seed_local_authorities(db: Session) -> int:
@@ -87,18 +90,56 @@ def seed_fee_schedules(db: Session, types: dict[str, PropertyType]) -> int:
     return len(FEE_SCHEDULES)
 
 
+def seed_demo_users(db: Session) -> int:
+    """บัญชีสาธิต 4 บทบาท — hash รหัสผ่านใหม่เฉพาะตอนสร้างครั้งแรก
+    เพื่อไม่ให้รันซ้ำแล้ว bcrypt ทำงานใหม่ทุกครั้งโดยไม่จำเป็น
+    """
+    authorities = {a.code: a for a in db.scalars(select(LocalAuthority)).all()}
+
+    for row in DEMO_USERS:
+        data = dict(row)
+        auth_code = data.pop("authority_code", None)
+        user = db.scalar(select(User).where(User.email == data["email"]))
+        if user is None:
+            user = User(**data, password_hash=hash_password(DEMO_PASSWORD), is_verified=True)
+            db.add(user)
+            db.flush()
+        else:
+            for k, v in data.items():
+                setattr(user, k, v)
+            user.is_verified = True
+
+        if auth_code:
+            exists = db.scalar(
+                select(OfficerAssignment).where(
+                    OfficerAssignment.officer_id == user.id,
+                    OfficerAssignment.local_authority_id == authorities[auth_code].id,
+                )
+            )
+            if exists is None:
+                db.add(
+                    OfficerAssignment(
+                        officer_id=user.id, local_authority_id=authorities[auth_code].id
+                    )
+                )
+    db.flush()
+    return len(DEMO_USERS)
+
+
 def main() -> None:
     with SessionLocal() as db:
         n_auth = seed_local_authorities(db)
         types = seed_property_types(db)
         n_rules = seed_classification_rules(db, types)
         n_fees = seed_fee_schedules(db, types)
+        n_users = seed_demo_users(db)
         db.commit()
 
     print(f"  อปท.              {n_auth} แห่ง")
     print(f"  ประเภทที่พัก       {len(types)} ประเภท")
     print(f"  กฎจำแนกประเภท     {n_rules} กฎ")
     print(f"  อัตราค่าธรรมเนียม  {n_fees} รายการ")
+    print(f"  บัญชีสาธิต         {n_users} บัญชี (รหัสผ่าน {DEMO_PASSWORD})")
 
 
 if __name__ == "__main__":
