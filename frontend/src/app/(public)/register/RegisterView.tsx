@@ -11,17 +11,12 @@ import { Mascot } from "@/components/brand/Mascot";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { ApiError } from "@/lib/api";
-import { type AuthUser, register as registerAccount, verifyOtp } from "@/lib/auth";
+import { type AuthUser, register as registerAccount } from "@/lib/auth";
 import { formatThaiId, normalizeThaiId } from "@/lib/thaiId";
 import { type RegisterForm, registerSchema } from "./schema";
 
-type Step =
-  | { name: "form" }
-  | { name: "otp"; email: string; demoCode: string | null }
-  | { name: "done"; user: AuthUser };
-
 export function RegisterView() {
-  const [step, setStep] = useState<Step>({ name: "form" });
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   return (
     <AuthLayout
@@ -34,26 +29,12 @@ export function RegisterView() {
       }
       tagline="สมัครครั้งเดียว ใช้ยื่นคำขอได้ทุกที่พักของคุณ"
     >
-      {step.name === "form" ? (
-        <RegisterForm onRegistered={(email, demoCode) => setStep({ name: "otp", email, demoCode })} />
-      ) : step.name === "otp" ? (
-        <OtpStep
-          email={step.email}
-          demoCode={step.demoCode}
-          onVerified={(user) => setStep({ name: "done", user })}
-        />
-      ) : (
-        <DoneStep user={step.user} />
-      )}
+      {user ? <DoneStep user={user} /> : <RegisterForm onRegistered={setUser} />}
     </AuthLayout>
   );
 }
 
-function RegisterForm({
-  onRegistered,
-}: {
-  onRegistered: (email: string, demoCode: string | null) => void;
-}) {
+function RegisterForm({ onRegistered }: { onRegistered: (user: AuthUser) => void }) {
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     control,
@@ -69,15 +50,16 @@ function RegisterForm({
   async function onSubmit(values: RegisterForm) {
     setServerError(null);
     try {
-      const res = await registerAccount({
-        first_name: values.first_name,
-        last_name: values.last_name,
-        national_id: normalizeThaiId(values.national_id),
-        birth_date: values.birth_date,
-        email: values.email,
-        password: values.password,
-      });
-      onRegistered(res.email, res.demo_code);
+      onRegistered(
+        await registerAccount({
+          first_name: values.first_name,
+          last_name: values.last_name,
+          national_id: normalizeThaiId(values.national_id),
+          birth_date: values.birth_date,
+          email: values.email,
+          password: values.password,
+        }),
+      );
     } catch (err) {
       setServerError(
         err instanceof ApiError
@@ -218,76 +200,6 @@ function buddhistHint(value: string): string | undefined {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return undefined;
   return `ตรงกับ พ.ศ. ${d.getFullYear() + 543}`;
-}
-
-function OtpStep({
-  email,
-  demoCode,
-  onVerified,
-}: {
-  email: string;
-  demoCode: string | null;
-  onVerified: (user: AuthUser) => void;
-}) {
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (code.trim().length !== 6) {
-      setError("กรุณากรอกรหัสยืนยัน 6 หลัก");
-      return;
-    }
-
-    setPending(true);
-    try {
-      onVerified(await verifyOtp(email, code.trim()));
-    } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : "เชื่อมต่อระบบไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง",
-      );
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <div className="py-4">
-      <h1 className="text-3xl font-bold text-ink sm:text-4xl">ยืนยันตัวตน</h1>
-      <p className="mt-2 text-ink-muted">
-        เราส่งรหัส 6 หลักไปที่ <span className="font-semibold text-ink">{email}</span>
-      </p>
-
-      <form onSubmit={onSubmit} noValidate className="mt-8 space-y-5">
-        <TextField
-          label="รหัสยืนยัน 6 หลัก"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          placeholder="000000"
-          maxLength={6}
-          className="text-center text-2xl tracking-[0.5em]"
-          value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-          error={error ?? undefined}
-        />
-
-        {demoCode ? (
-          <p className="rounded-xl border border-dashed border-line bg-canvas px-4 py-3 text-sm text-ink-muted">
-            โหมดสาธิต: ยังไม่ได้ต่อระบบส่งอีเมลจริง ใช้รหัส{" "}
-            <span className="font-mono font-semibold text-ink">{demoCode}</span>
-          </p>
-        ) : null}
-
-        <Button type="submit" disabled={pending}>
-          {pending ? "กำลังยืนยัน…" : "ยืนยันตัวตน"}
-        </Button>
-      </form>
-    </div>
-  );
 }
 
 /** ยังไม่ redirect เพราะหน้าปลายทางของผู้ประกอบการยังไม่ถูกสร้าง

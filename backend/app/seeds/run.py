@@ -101,13 +101,12 @@ def seed_demo_users(db: Session) -> int:
         auth_code = data.pop("authority_code", None)
         user = db.scalar(select(User).where(User.email == data["email"]))
         if user is None:
-            user = User(**data, password_hash=hash_password(DEMO_PASSWORD), is_verified=True)
+            user = User(**data, password_hash=hash_password(DEMO_PASSWORD))
             db.add(user)
             db.flush()
         else:
             for k, v in data.items():
                 setattr(user, k, v)
-            user.is_verified = True
 
         if auth_code:
             exists = db.scalar(

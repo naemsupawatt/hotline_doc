@@ -17,7 +17,7 @@ from app.models.enums import UserRole
 
 
 class User(Base, TimestampMixin):
-    """M1: สมัคร/เข้าสู่ระบบด้วยอีเมลหรือเบอร์โทร + ยืนยันตัวตน
+    """M1: สมัคร/เข้าสู่ระบบด้วยอีเมลหรือเบอร์โทร
 
     role เก็บเป็น string ตรงกับ UserRole (enums.py) ไม่ใช้ native PG enum
     เพราะการเพิ่มบทบาทใหม่จะต้อง ALTER TYPE ซึ่งยุ่งกับ migration ตอนแข่ง
@@ -50,11 +50,6 @@ class User(Base, TimestampMixin):
     birth_date: Mapped[date | None] = mapped_column(Date)
 
     role: Mapped[str] = mapped_column(String(20), server_default=UserRole.OPERATOR, nullable=False)
-
-    # M1 "กลไกยืนยันตัวตนเพื่อแยกผู้ใช้จริงออกจากบัญชีขยะ"
-    is_verified: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
-    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    verification_code: Mapped[str | None] = mapped_column(String(10))
 
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -78,13 +78,19 @@ brand asset แปลงเป็น WebP แล้ว, enums สถานะท
 - ER Diagram + คำอธิบาย 3NF อยู่ที่ `docs/database.md` (deliverable ข้อ 2 เสร็จ)
 
 **M1 เสร็จแล้ว (19 ก.ย. เย็น):**
-- `POST /auth/register` `/verify-otp` `/login` `GET /auth/me` ใช้งานได้จริง ทดสอบครบ
-- หน้า `/login` และ `/register` (สมัคร → ยืนยัน OTP → เข้าระบบ) `/` redirect ไป `/login`
+- `POST /auth/register` `/auth/login` `GET /auth/me` ใช้งานได้จริง ทดสอบครบ
+- หน้า `/login` และ `/register` (สมัครเสร็จเข้าใช้งานได้ทันที) `/` redirect ไป `/login`
 - หน้าตรวจสอบระบบดีไซน์ย้ายไป `/scaffold`
 - เลขบัตรประชาชน: ตรวจ check digit ทั้งสองฝั่ง เก็บ unique แสดงแบบปิดบังเสมอ
   **ห้ามเพิ่ม `national_id` ดิบลงใน response schema ใด ๆ**
-- บัญชีสาธิต 4 บทบาท รหัส `demo1234`, OTP โหมดสาธิตคงที่ `123456`
+- บัญชีสาธิต 4 บทบาท รหัส `demo1234`
 - เทสต์ backend 33 เคส (`uv run pytest`)
+
+**ตัด OTP ออกแล้ว (ทีมตัดสินใจ 19 ก.ย.)** — M1 เขียนว่าต้องมี "กลไกยืนยันตัวตน
+เพื่อแยกผู้ใช้จริงออกจากบัญชีขยะ" ถ้ากรรมการถามข้อนี้ ให้ตอบว่ากลไกที่เหลืออยู่คือ
+**หนึ่งเลขบัตรประชาชนต่อหนึ่งบัญชี และเลขต้องผ่านหลักตรวจสอบ** จึงสร้างบัญชีจำนวนมาก
+ด้วยเลขมั่ว ๆ ไม่ได้ (มีเทสต์ `test_duplicate_national_id_is_the_remaining_bot_guard`
+เป็นหลักฐาน) ถ้าจะเอา OTP กลับ ให้ `alembic downgrade` หนึ่งขั้นแล้วดู git history
 
 **ยังไม่เริ่ม:** endpoint กลุ่ม wizard/applications/documents/officer/reports/admin
 (ยังเป็น stub), หน้าจอของผู้ประกอบการ/เจ้าหน้าที่/ส่วนกลางทั้งหมด,

@@ -97,11 +97,6 @@ class RegisterRequest(BaseModel):
         return v
 
 
-class VerifyOtpRequest(BaseModel):
-    email: str = Field(max_length=160, examples=["somchai@example.com"])
-    code: str = Field(min_length=6, max_length=6, examples=["123456"])
-
-
 class UserOut(BaseModel):
     id: int
     full_name: str = Field(examples=["สมชาย ใจดี"])
@@ -110,7 +105,6 @@ class UserOut(BaseModel):
     email: str | None = Field(default=None, examples=["somchai@example.com"])
     phone: str | None = Field(default=None, examples=["0812345678"])
     role: str = Field(examples=["operator"])
-    is_verified: bool = Field(examples=[True])
 
     # เลขบัตรออกไปแบบปิดบังเท่านั้น ห้ามเพิ่มฟิลด์ national_id ดิบลงใน schema นี้
     national_id_masked: str | None = Field(default=None, examples=["x-xxxx-xxxxx-45-1"])
@@ -122,15 +116,3 @@ class TokenResponse(BaseModel):
     access_token: str = Field(examples=["eyJhbGciOiJIUzI1NiIs..."])
     token_type: str = Field(default="bearer", examples=["bearer"])
     user: UserOut
-
-
-class RegisterResponse(BaseModel):
-    """ยังไม่คืน token เพราะต้องยืนยันตัวตนก่อน (M1)"""
-
-    email: str = Field(examples=["somchai@example.com"])
-    message: str = Field(examples=["สมัครสมาชิกสำเร็จ กรุณายืนยันตัวตนด้วยรหัส 6 หลัก"])
-    demo_code: str | None = Field(
-        default=None,
-        examples=["123456"],
-        description="เฉพาะโหมดสาธิต — ระบบจริงต้องส่งรหัสทางอีเมล/SMS ไม่ใช่คืนมาทาง API",
-    )

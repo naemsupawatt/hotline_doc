@@ -1,4 +1,4 @@
-"""ทดสอบเส้นทางสมัคร -> ยืนยันตัวตน -> เข้าสู่ระบบ (M1)
+"""ทดสอบเส้นทางสมัคร -> เข้าสู่ระบบ (M1)
 
 ใช้ TestClient ยิงผ่าน API จริงและเขียนลงฐานข้อมูลจริง
 จึงล้างผู้ใช้ทดสอบทิ้งทุกครั้งก่อนและหลังรัน
@@ -12,7 +12,6 @@ from app.core.db import SessionLocal
 from app.main import app
 from app.models.audit import AuditLog
 from app.models.user import User
-from app.services.auth import DEMO_OTP
 from tests.test_thai_id import make_valid
 
 TEST_EMAIL = "pytest-user@example.com"
@@ -54,44 +53,20 @@ def client():
     cleanup()
 
 
-def test_register_then_verify_then_login(client):
+def test_register_then_login(client):
     created = client.post("/api/v1/auth/register", json=payload())
     assert created.status_code == 201, created.text
-
-    # M1: ยังเข้าระบบไม่ได้จนกว่าจะยืนยันตัวตน
-    blocked = client.post(
-        "/api/v1/auth/login", json={"identifier": TEST_EMAIL, "password": "demo1234"}
-    )
-    assert blocked.status_code == 401
-    assert "ยืนยันตัวตน" in blocked.json()["detail"]
-
-    verified = client.post(
-        "/api/v1/auth/verify-otp", json={"email": TEST_EMAIL, "code": DEMO_OTP}
-    )
-    assert verified.status_code == 200
-    assert verified.json()["user"]["is_verified"] is True
+    # สมัครเสร็จได้ token ทันที ไม่มีขั้นยืนยันตัวตนคั่น
+    assert created.json()["access_token"]
 
     ok = client.post("/api/v1/auth/login", json={"identifier": TEST_EMAIL, "password": "demo1234"})
     assert ok.status_code == 200
 
 
-def test_verified_account_cannot_mint_token_with_wrong_otp(client):
-    """กันบั๊กที่เคยเกิด: บัญชีที่ยืนยันแล้วเคยได้ token กลับมาแม้กรอกรหัสผิด
-
-    ใครที่รู้อีเมลก็จะยิง endpoint นี้แล้วได้สิทธิ์เข้าระบบไปเลย
-    """
+def test_wrong_password_rejected_after_register(client):
     client.post("/api/v1/auth/register", json=payload())
-    client.post("/api/v1/auth/verify-otp", json={"email": TEST_EMAIL, "code": DEMO_OTP})
-
-    res = client.post("/api/v1/auth/verify-otp", json={"email": TEST_EMAIL, "code": "999999"})
-    assert res.status_code == 400
-    assert "access_token" not in res.text
-
-
-def test_wrong_otp_is_rejected(client):
-    client.post("/api/v1/auth/register", json=payload())
-    res = client.post("/api/v1/auth/verify-otp", json={"email": TEST_EMAIL, "code": "000000"})
-    assert res.status_code == 400
+    res = client.post("/api/v1/auth/login", json={"identifier": TEST_EMAIL, "password": "wrong"})
+    assert res.status_code == 401
     assert "access_token" not in res.text
 
 
@@ -126,7 +101,31 @@ def test_duplicate_email_and_national_id_rejected(client):
 
 
 def test_national_id_never_returned_raw(client):
-    client.post("/api/v1/auth/register", json=payload())
-    res = client.post("/api/v1/auth/verify-otp", json={"email": TEST_EMAIL, "code": DEMO_OTP})
+    res = client.post("/api/v1/auth/register", json=payload())
     assert TEST_ID not in res.text, "เลขบัตรเต็มต้องไม่หลุดออกไปกับ response"
     assert res.json()["user"]["national_id_masked"].startswith("x-xxxx")
+
+    me = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {res.json()['access_token']}"},
+    )
+    assert TEST_ID not in me.text
+
+
+def test_duplicate_national_id_is_the_remaining_bot_guard(client):
+    """หลังตัด OTP ออก กลไกกันบัญชีขยะที่เหลืออยู่คือเลขบัตรประชาชน
+
+    หนึ่งเลขบัตรต่อหนึ่งบัญชี และเลขต้องผ่านหลักตรวจสอบ
+    ทำให้สร้างบัญชีจำนวนมากด้วยเลขมั่ว ๆ ไม่ได้
+    เทสต์นี้มีไว้เป็นหลักฐานตอนตอบกรรมการเรื่อง M1
+    """
+    assert client.post("/api/v1/auth/register", json=payload()).status_code == 201
+
+    again = client.post("/api/v1/auth/register", json=payload(email="someone-else@example.com"))
+    assert again.status_code == 409
+
+    fake_id = client.post(
+        "/api/v1/auth/register",
+        json=payload(email="fake@example.com", national_id="1111111111111"),
+    )
+    assert fake_id.status_code == 422

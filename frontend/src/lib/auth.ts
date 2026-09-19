@@ -7,7 +7,6 @@ export type AuthUser = {
   email: string | null;
   phone: string | null;
   role: UserRole;
-  is_verified: boolean;
   national_id_masked: string | null;
 };
 
@@ -29,29 +28,11 @@ export type RegisterInput = {
   password: string;
 };
 
-type RegisterResponse = {
-  email: string;
-  message: string;
-  demo_code: string | null;
-};
-
-/** M1: สมัครสมาชิก — ยังไม่ได้ token ต้องยืนยันตัวตนก่อน */
-export async function register(input: RegisterInput): Promise<RegisterResponse> {
-  return api<RegisterResponse>("/auth/register", {
+/** M1: สมัครสมาชิก — สมัครเสร็จเข้าใช้งานได้ทันที */
+export async function register(input: RegisterInput, remember = true): Promise<AuthUser> {
+  const res = await api<TokenResponse>("/auth/register", {
     method: "POST",
     body: JSON.stringify(input),
-  });
-}
-
-/** M1: ยืนยันตัวตนด้วยรหัส 6 หลัก แล้วเข้าสู่ระบบให้เลย */
-export async function verifyOtp(
-  email: string,
-  code: string,
-  remember = true,
-): Promise<AuthUser> {
-  const res = await api<TokenResponse>("/auth/verify-otp", {
-    method: "POST",
-    body: JSON.stringify({ email, code }),
   });
   saveSession(res, remember);
   return res.user;
