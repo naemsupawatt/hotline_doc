@@ -55,7 +55,7 @@ export function TextField({
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : hint ? hintId : undefined}
           className={cn(
-            "min-h-12 w-full rounded-xl border bg-canvas py-3 text-base text-ink",
+            "min-h-12 w-full rounded-xl border bg-surface py-3 text-base text-ink transition-colors hover:border-brand-200 focus:border-brand-500 focus:bg-brand-50/30",
             "placeholder:text-ink-muted/70",
             Icon ? "pl-12" : "pl-4",
             revealable ? "pr-12" : "pr-4",

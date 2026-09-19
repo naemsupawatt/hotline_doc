@@ -60,7 +60,7 @@ export function OverviewView() {
 
       {/* ตัวเลขนำ 4 ตัว — แยก "ค้างที่เจ้าหน้าที่" กับ "ค้างที่ผู้ยื่น" ออกจากกัน
           เพราะสองอย่างนี้นำไปสู่การแก้ปัญหาคนละแบบ */}
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat icon={ClipboardList} label="คำขอทั้งหมด" value={data.total} tone="brand" />
         <Stat icon={Clock} label="รอเจ้าหน้าที่ตรวจ" value={data.waiting_on_officer} tone="info" />
         <Stat
@@ -113,10 +113,10 @@ export function OverviewView() {
 }
 
 const TONE = {
-  brand: "bg-brand-50 text-brand-700",
-  info: "bg-info-bg text-info-fg",
-  warn: "bg-warn-bg text-warn-fg",
-  success: "bg-success-bg text-success-fg",
+  brand: "border-brand-100 bg-brand-50 text-brand-700",
+  info: "border-info-fg/15 bg-info-bg/60 text-info-fg",
+  warn: "border-warn-fg/15 bg-warn-bg/60 text-warn-fg",
+  success: "border-success-fg/15 bg-success-bg/60 text-success-fg",
 } as const;
 
 function Stat({
@@ -131,13 +131,13 @@ function Stat({
   tone: keyof typeof TONE;
 }) {
   return (
-    <div className="flex items-center gap-4 rounded-card border border-line bg-surface p-5">
-      <span className={`grid size-12 shrink-0 place-items-center rounded-2xl ${TONE[tone]}`}>
+    <div className={`flex items-center gap-4 rounded-card border p-5 shadow-card ${TONE[tone]}`}>
+      <span className="grid size-12 shrink-0 place-items-center rounded-full bg-surface/80">
         <Icon className="size-6" aria-hidden />
       </span>
       <div className="min-w-0">
         <p className="text-sm text-ink-muted">{label}</p>
-        <p className="text-3xl font-bold text-ink">
+        <p className="mt-1 text-3xl font-bold tabular-nums text-ink">
           {value.toLocaleString("th-TH")}
           <span className="ml-1 text-sm font-normal text-ink-muted">รายการ</span>
         </p>
@@ -180,24 +180,24 @@ function AuthorityTable({ rows }: { rows: AuthorityRow[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[40rem] text-sm">
-        <thead>
+        <thead className="bg-info-bg/50">
           <tr className="border-b border-line text-left text-ink-muted">
-            <th scope="col" className="pb-2 font-medium">
+            <th scope="col" className="px-3 py-3 font-medium">
               พื้นที่
             </th>
-            <th scope="col" className="pb-2 text-right font-medium">
+            <th scope="col" className="px-3 py-3 text-right font-medium">
               ทั้งหมด
             </th>
-            <th scope="col" className="pb-2 text-right font-medium">
+            <th scope="col" className="px-3 py-3 text-right font-medium">
               รอเจ้าหน้าที่
             </th>
-            <th scope="col" className="pb-2 text-right font-medium">
+            <th scope="col" className="px-3 py-3 text-right font-medium">
               รอผู้ยื่น
             </th>
-            <th scope="col" className="pb-2 text-right font-medium">
+            <th scope="col" className="px-3 py-3 text-right font-medium">
               เสร็จแล้ว
             </th>
-            <th scope="col" className="pb-2 text-right font-medium">
+            <th scope="col" className="px-3 py-3 text-right font-medium">
               ค้างนานสุด
             </th>
           </tr>
@@ -207,22 +207,22 @@ function AuthorityTable({ rows }: { rows: AuthorityRow[] }) {
             const pending = row.waiting_on_officer + row.waiting_on_applicant;
             return (
               <tr key={row.name} className="border-b border-line/60 last:border-0">
-                <th scope="row" className="py-2.5 text-left font-medium text-ink">
+                <th scope="row" className="px-3 py-3 text-left font-medium text-ink">
                   {row.name}
                 </th>
-                <td className="py-2.5 text-right text-ink">{row.total}</td>
+                <td className="px-3 py-3 text-right text-ink">{row.total}</td>
                 <td
-                  className={`py-2.5 text-right ${row.waiting_on_officer > 0 ? "font-semibold text-ink" : "text-ink-muted"}`}
+                  className={`px-3 py-3 text-right ${row.waiting_on_officer > 0 ? "font-semibold text-ink" : "text-ink-muted"}`}
                 >
                   {row.waiting_on_officer}
                 </td>
                 <td
-                  className={`py-2.5 text-right ${row.waiting_on_applicant > 0 ? "font-semibold text-ink" : "text-ink-muted"}`}
+                  className={`px-3 py-3 text-right ${row.waiting_on_applicant > 0 ? "font-semibold text-ink" : "text-ink-muted"}`}
                 >
                   {row.waiting_on_applicant}
                 </td>
-                <td className="py-2.5 text-right text-ink-muted">{row.finished}</td>
-                <td className="py-2.5 text-right">
+                <td className="px-3 py-3 text-right text-ink-muted">{row.finished}</td>
+                <td className="px-3 py-3 text-right">
                   {pending === 0 ? (
                     <span className="text-ink-muted">—</span>
                   ) : (

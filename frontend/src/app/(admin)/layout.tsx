@@ -1,12 +1,7 @@
 import type { ReactNode } from "react";
 
-import { AppNav } from "@/components/common/AppNav";
+import { AppShell } from "@/components/common/AppShell";
 
 export default function Layout({ children }: { children: ReactNode }) {
-  return (
-    <>
-      <AppNav />
-      {children}
-    </>
-  );
+  return <AppShell>{children}</AppShell>;
 }

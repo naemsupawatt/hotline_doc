@@ -145,7 +145,7 @@ export function LoginView() {
             สมัครสมาชิก
           </Link>
 
-          <DemoAccounts />
+          <DemoAccounts onSelect={(email) => { setIdentifier(email); setPassword("demo1234"); setError(null); }} />
         </>
       )}
     </AuthLayout>
@@ -203,7 +203,7 @@ function SignedIn({ user }: { user: AuthUser }) {
 
 /** กล่องบัญชีสาธิต — มีเพื่อให้กรรมการกดลองได้ทันทีโดยไม่ต้องถาม
     ต้องเอาออกก่อนนำระบบไปใช้จริง */
-function DemoAccounts() {
+function DemoAccounts({ onSelect }: { onSelect: (email: string) => void }) {
   const accounts = [
     ["ผู้ประกอบการ", "operator@example.com"],
     ["เจ้าหน้าที่ท้องถิ่น", "officer@example.com"],
@@ -212,19 +212,18 @@ function DemoAccounts() {
   ];
 
   return (
-    <div className="mt-8 rounded-xl border border-dashed border-line bg-canvas p-4">
-      <p className="text-xs font-semibold text-ink">บัญชีสำหรับทดลองใช้ (ข้อมูลจำลอง)</p>
-      <dl className="mt-2 space-y-1 text-xs text-ink-muted">
+    <details className="mt-7 rounded-xl border border-line bg-canvas p-4">
+      <summary className="text-sm font-semibold text-ink">ทดลองใช้งานด้วยบัญชีสาธิต</summary>
+      <p className="mt-2 text-xs text-ink-muted">เลือกบทบาทเพื่อกรอกบัญชีตัวอย่าง แล้วกดเข้าสู่ระบบ</p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
         {accounts.map(([label, email]) => (
-          <div key={email} className="flex flex-wrap gap-x-2">
-            <dt className="min-w-28">{label}</dt>
-            <dd className="font-mono">{email}</dd>
-          </div>
+          <button key={email} type="button" onClick={() => onSelect(email)}
+            className="min-h-11 rounded-lg border border-line bg-surface px-2 py-2 text-xs font-medium text-brand-700 transition-colors hover:border-brand-500 hover:bg-brand-50">
+            {label}
+          </button>
         ))}
-      </dl>
-      <p className="mt-2 text-xs text-ink-muted">
-        รหัสผ่านทุกบัญชี <span className="font-mono">demo1234</span>
-      </p>
-    </div>
+      </div>
+      <p className="mt-3 text-xs text-ink-muted">ข้อมูลจำลอง · รหัสผ่านทุกบัญชี <span className="font-mono">demo1234</span></p>
+    </details>
   );
 }

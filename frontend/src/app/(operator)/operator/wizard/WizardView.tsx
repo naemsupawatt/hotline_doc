@@ -40,7 +40,7 @@ import {
   listLocalAuthorities,
 } from "@/lib/wizard";
 
-const STEPS = [{ label: "ข้อมูลที่พัก" }, { label: "บริการ" }, { label: "ผลประเมิน" }];
+const STEPS = [{ label: "ข้อมูลที่พักและบริการ" }, { label: "ผลประเมินและเอกสาร" }];
 
 /** คำตอบทั้งหมดของ wizard เก็บไว้ที่ตัวหน้า เพราะขั้น "เริ่มยื่นคำขอ" ต้องใช้ค่าชุดเดียวกัน
     ส่งซ้ำไปให้เซิร์ฟเวอร์จำแนกใหม่ ไม่ได้ส่งผลจำแนกที่ได้มาแล้วกลับไป */
@@ -85,12 +85,12 @@ export function WizardView() {
         description="ตอบข้อมูลเบื้องต้น เพื่อรับแนวทางการดำเนินการตามกฎหมายอย่างเข้าใจง่าย"
       />
 
-      <Stepper steps={STEPS} current={result ? 2 : 0} className="mt-8 max-w-xl" />
+      <Stepper steps={STEPS} current={result ? 1 : 0} className="mt-8 max-w-xl rounded-2xl border border-line bg-surface px-5 py-5" />
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-2">
+      <div className="mt-6 grid items-start gap-6 xl:grid-cols-[1.2fr_1fr]">
         <AssessmentForm
           answers={answers}
-          onAnswersChange={setAnswers}
+          onAnswersChange={(next) => { setAnswers(next); setResult(null); }}
           onResult={setResult}
           onReset={() => setResult(null)}
           authorities={authorities}
@@ -175,7 +175,7 @@ function AssessmentForm({
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="rounded-card border border-line bg-surface p-5">
+    <form onSubmit={onSubmit} noValidate className="rounded-card border border-line bg-surface p-5 shadow-card sm:p-7">
       <div className="grid gap-5 sm:grid-cols-2">
         <TextField
           label="จำนวนห้องพัก"
@@ -297,7 +297,7 @@ function ResultPanel({ result }: { result: ClassifyResult | null }) {
   if (!result) return <EmptyResult />;
 
   return (
-    <div className="rounded-card border border-line bg-brand-50/40 p-5">
+    <div className="rounded-card border border-brand-100 bg-brand-50 p-6 shadow-card">
       <div className="flex items-start gap-4">
         <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-surface text-brand-500">
           <FileText className="size-7" aria-hidden />
@@ -344,14 +344,24 @@ function ResultPanel({ result }: { result: ClassifyResult | null }) {
 
 function EmptyResult() {
   return (
-    <div className="flex flex-col items-center justify-center rounded-card border border-dashed border-line bg-brand-50/30 p-8 text-center">
-      <Mascot pose="wave" size="md" className="w-40" />
-      <p className="mt-4 font-semibold text-ink">กรอกข้อมูลด้านซ้ายเพื่อดูผลประเมิน</p>
-      <p className="mt-1 max-w-sm text-sm text-ink-muted">
-        ระบบจะบอกว่าที่พักของคุณเข้าข่ายประเภทใด ต้องใช้เอกสารอะไรบ้าง
-        และเอกสารฉบับใดต้องไปขอจากหน่วยงานอื่น
-      </p>
-    </div>
+    <aside className="rounded-card border border-brand-100 bg-brand-50 p-6 sm:p-7">
+      <p className="text-xs font-semibold text-brand-700">เริ่มต้นอย่างมั่นใจ</p>
+      <h2 className="mt-2 text-2xl font-bold text-navy-900">เรื่องเอกสารที่พัก<br />ให้เราช่วยวางแผน</h2>
+      <p className="mt-3 text-sm leading-relaxed text-ink-muted">กรอกข้อมูลที่พักของคุณ แล้วระบบจะสรุปแนวทางที่เหมาะกับที่พักให้ในขั้นตอนถัดไป</p>
+      <div className="mt-5 space-y-3 rounded-xl border border-brand-100 bg-surface/90 p-4">
+        {[
+          { icon: Building2, text: "รู้ว่าที่พักเข้าข่ายประเภทใด" },
+          { icon: FileText, text: "เห็นรายการเอกสารที่ต้องเตรียม" },
+          { icon: Landmark, text: "รู้จุดติดต่อหน่วยงานที่เกี่ยวข้อง" },
+        ].map(({ icon: ItemIcon, text }) => {
+          return <p key={text} className="flex items-center gap-3 text-sm text-navy-700"><ItemIcon className="size-5 shrink-0 text-brand-600" aria-hidden />{text}</p>;
+        })}
+      </div>
+      <div className="mt-5 flex items-center justify-center gap-4">
+        <Mascot pose="wave" size="md" className="w-28" />
+        <p className="text-sm leading-relaxed font-medium text-brand-700">เอกสารพร้อม<br />ก้าวต่อได้อย่างมั่นใจ</p>
+      </div>
+    </aside>
   );
 }
 

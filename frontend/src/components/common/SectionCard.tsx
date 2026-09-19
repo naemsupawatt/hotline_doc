@@ -34,15 +34,15 @@ export function SectionCard({
   className,
 }: Props) {
   return (
-    <section className={cn("overflow-hidden rounded-card border border-line bg-surface", className)}>
-      <header className={cn("flex items-start gap-3 border-b border-line px-5 py-4", TONE[tone])}>
+    <section className={cn("overflow-hidden rounded-card border border-line bg-surface shadow-card", className)}>
+      <header className={cn("flex flex-wrap items-start gap-3 border-b border-line px-5 py-5", TONE[tone])}>
         {Icon && (
-          <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-xl bg-surface text-brand-500">
+          <span className={cn("mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl", tone === "info" ? "bg-info-bg text-info-fg" : "bg-brand-50 text-brand-600")}>
             <Icon className="size-5" aria-hidden />
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <h2 className="font-semibold text-ink">{title}</h2>
+          <h2 className="text-lg font-semibold text-ink">{title}</h2>
           {description && <p className="mt-0.5 text-sm text-ink-muted">{description}</p>}
         </div>
         {action}

@@ -3,7 +3,7 @@ import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * ใช้ 2 ที่: wizard ประเมินที่พัก (3 ขั้น) และหน้าติดตามคำขอ (4 ขั้น M7)
+ * ใช้กับ wizard ประเมินที่พัก และหน้าติดตามคำขอ (4 ขั้น M7)
  * ในหน้าติดตาม ให้ส่ง note ของขั้นปัจจุบันเป็น "อยู่ในขั้นนี้ 2 วัน"
  */
 export type Step = { label: string; note?: string };
@@ -22,13 +22,13 @@ export function Stepper({ steps, current, className }: Props) {
         const done = i < current;
         const active = i === current;
         return (
-          <li key={step.label} className="flex flex-1 items-start last:flex-none">
-            <div className="flex flex-col items-center gap-2 px-1 text-center">
+          <li key={step.label} className="relative flex min-w-0 flex-1 justify-center">
+            <div className="relative z-10 flex min-w-0 flex-col items-center gap-3 px-1 text-center">
               <span
                 className={cn(
-                  "grid size-8 shrink-0 place-items-center rounded-full border-2 text-sm font-semibold",
+                  "grid size-10 shrink-0 place-items-center rounded-full border-2 text-sm font-semibold",
                   done && "border-brand-500 bg-brand-500 text-white",
-                  active && "border-brand-500 bg-white text-brand-600",
+                  active && "border-brand-500 bg-brand-500 text-white ring-4 ring-brand-100",
                   !done && !active && "border-line bg-white text-ink-muted",
                 )}
                 aria-current={active ? "step" : undefined}
@@ -38,7 +38,7 @@ export function Stepper({ steps, current, className }: Props) {
               <span className="min-w-0">
                 <span
                   className={cn(
-                    "block text-sm font-medium",
+                    "block text-xs font-medium sm:text-sm",
                     active ? "text-brand-600" : done ? "text-ink" : "text-ink-muted",
                   )}
                 >
@@ -49,7 +49,7 @@ export function Stepper({ steps, current, className }: Props) {
             </div>
             {i < steps.length - 1 && (
               <span
-                className={cn("mt-4 h-0.5 flex-1 rounded", done ? "bg-brand-500" : "bg-line")}
+                className={cn("absolute top-5 left-1/2 h-0.5 w-full", done ? "bg-brand-500" : "bg-line")}
                 aria-hidden
               />
             )}

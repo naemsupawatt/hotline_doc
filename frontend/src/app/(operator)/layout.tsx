@@ -1,13 +1,7 @@
 import type { ReactNode } from "react";
 
-import { AppNav } from "@/components/common/AppNav";
+import { AppShell } from "@/components/common/AppShell";
 
-/** ทุกหน้าในกลุ่มนี้ใช้แถบนำทางเดียวกัน เมนูเปลี่ยนตามบทบาทของผู้ใช้เอง */
 export default function Layout({ children }: { children: ReactNode }) {
-  return (
-    <>
-      <AppNav />
-      {children}
-    </>
-  );
+  return <AppShell>{children}</AppShell>;
 }

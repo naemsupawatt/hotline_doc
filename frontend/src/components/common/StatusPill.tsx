@@ -47,3 +47,7 @@ export function StatusPill(props: Props) {
     </span>
   );
 }
+
+export function applicationStatusLabel(status: ApplicationStatus): string {
+  return APP[status].label;
+}
