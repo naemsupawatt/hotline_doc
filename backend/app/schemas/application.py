@@ -116,6 +116,9 @@ class ApplicationOut(BaseModel):
     property: PropertyOut
     documents: DocumentChecklistOut
 
+    # M10: มีค่าเมื่อเจ้าหน้าที่ออกเอกสารแล้ว หน้าจอใช้ขึ้นปุ่ม "พิมพ์เอกสาร"
+    license_no: str | None = Field(default=None, examples=[None])
+
     # M6: หน้าจอใช้สองค่านี้ตัดสินว่าจะเปิดปุ่ม "ยื่นคำขอ" หรือไม่
     # และถ้ายังยื่นไม่ได้ ต้องบอกให้ครบว่าขาดอะไร ไม่ใช่แค่ทำปุ่มเป็นสีเทา
     can_submit: bool = Field(examples=[False])

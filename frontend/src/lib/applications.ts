@@ -80,6 +80,8 @@ export type Application = {
   fee: ClassifyResult["fee"];
   property: ApplicationProperty;
   documents: ClassifyResult["documents"];
+  /** M10: มีค่าเมื่อเจ้าหน้าที่ออกเอกสารแล้ว */
+  license_no: string | null;
   /** M6: หน้าจอใช้สองค่านี้ตัดสินว่าจะเปิดปุ่ม "ยื่นคำขอ" หรือไม่ */
   can_submit: boolean;
   missing_documents: MissingDocument[];
@@ -165,6 +167,42 @@ export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} ไบต์`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** เอกสารสิทธิ์ที่ระบบออกให้ — ต้องตรงกับ LicenseOut ใน schemas/license.py */
+export type LicenseDocument = {
+  license_no: string;
+  kind: "license" | "notice_receipt";
+  title: string;
+  application_no: string;
+  property_type_name: string;
+  holder_name: string;
+  issued_at: string;
+  valid_from: string;
+  valid_until: string | null;
+  is_expired: boolean;
+  is_revoked: boolean;
+  fee_amount: number | null;
+  fee_currency: string | null;
+  issued_by_name: string;
+  local_authority_name: string;
+  property: ApplicationProperty;
+};
+
+export function getLicense(applicationNo: string) {
+  return api<LicenseDocument>(
+    `/applications/${encodeURIComponent(applicationNo)}/license`,
+    authed(),
+  );
+}
+
+/** วันที่แบบไทย พ.ศ. — เอกสารราชการใช้ พ.ศ. ไม่ใช่ ค.ศ. */
+export function thaiDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("th-TH", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 /** รวมเอกสารทั้งสองหมวดเป็นชุดเดียว เรียงตามที่ backend ส่งมา */

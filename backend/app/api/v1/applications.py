@@ -18,7 +18,8 @@ from app.models.application import Application
 from app.models.audit import AuditLog
 from app.models.authority import LocalAuthority
 from app.models.classification import ApplicationClassification
-from app.models.property import Property
+from app.models.property import Operator, Property
+from app.models.user import User
 from app.schemas.application import (
     AddressOut,
     ApplicationOut,
@@ -27,10 +28,12 @@ from app.schemas.application import (
     PropertyOut,
     StartApplicationRequest,
 )
+from app.schemas.license import LicenseOut
 from app.schemas.wizard import FeeOut
 from app.services import application as app_svc
 from app.services import classification as classify_svc
 from app.services import document as doc_svc
+from app.services import license as license_svc
 
 router = APIRouter()
 
@@ -161,6 +164,36 @@ def submit_application(
     return _detail(db, application)
 
 
+@router.get(
+    "/{application_no}/license",
+    response_model=LicenseOut,
+    summary="ข้อมูลใบอนุญาตหรือหนังสือรับรอง สำหรับพิมพ์ (M10)",
+    responses={404: {"description": "ยังไม่ได้ออกเอกสารสำหรับคำขอนี้"}},
+)
+def application_license(
+    application_no: str, db: DbSession, current: CurrentOperator, request: Request
+) -> LicenseOut:
+    application = _load_owned(db, application_no, current, request)
+
+    row = license_svc.existing(db, application.id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="คำขอนี้ยังไม่ได้ออกเอกสาร กรุณารอเจ้าหน้าที่ดำเนินการ",
+        )
+
+    prop = db.get(Property, application.property_id)
+    authority = db.get(LocalAuthority, application.local_authority_id)
+    holder = db.scalar(
+        select(User)
+        .join(Operator, Operator.user_id == User.id)
+        .where(Operator.id == application.operator_id)
+    )
+    issuer = db.get(User, row.issued_by_id)
+
+    return presenters.to_license_out(db, row, application, prop, authority, holder, issuer)
+
+
 # ---------------------------------------------------------------- ตัวช่วยภายใน
 
 
@@ -260,6 +293,9 @@ def _detail(db: DbSession, application: Application) -> ApplicationOut:
         ),
         documents=presenters.to_checklist(
             docs, local_authority_id=application.local_authority_id, files=files
+        ),
+        license_no=(
+            issued.license_no if (issued := license_svc.existing(db, application.id)) else None
         ),
         can_submit=not missing and app_svc.is_editable(application),
         missing_documents=[MissingDocumentOut(code=m.code, name_th=m.name_th) for m in missing],

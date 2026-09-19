@@ -42,7 +42,19 @@ class FeeSchedule(Base, TimestampMixin):
 
 
 class License(Base, TimestampMixin):
-    """ใบอนุญาตอิเล็กทรอนิกส์ (M10)
+    """เอกสารสิทธิ์ที่ระบบออกให้หลังอนุมัติ (M10)
+
+    เก็บสองแบบไว้ในตารางเดียว แยกด้วย kind:
+      license         — ใบอนุญาตของที่พักแรมประเภท 1/2 มีค่าธรรมเนียมและวันหมดอายุ
+      notice_receipt  — หนังสือรับรองการแจ้งของที่พักที่ "ไม่เข้าข่ายโรงแรม"
+                        ไม่มีค่าธรรมเนียมและไม่มีวันหมดอายุ
+
+    รวมไว้ตารางเดียวเพราะทั้งสองแบบมีสิ่งเดียวกันครบ: ผูกกับคำขอหนึ่งใบ
+    มีเลขอ้างอิงไม่ซ้ำ ออกโดยเจ้าหน้าที่คนหนึ่ง ณ ท้องถิ่นหนึ่ง และพิมพ์ได้
+    ถ้าแยกสองตารางจะต้องเขียน query รวมทุกครั้งที่ทำรายงานส่วนกลาง (M11)
+
+    บทบาทของทั้งคู่ตรงกับที่โจทย์เขียนในตารางข้อ 5 ว่าผู้ประกอบการต้อง
+    "พิมพ์ใบอนุญาตหรือเอกสารอ้างอิงเมื่อได้รับอนุมัติ"
 
     ตอบ "ข้อควรคิด" ข้อ 1 ของโจทย์ข้อ 8 โดยตรง:
     "เมื่ออัตราค่าธรรมเนียมเปลี่ยน ใบอนุญาตที่ออกไปแล้วต้องยังคงอ้างอิงอัตราเดิม"
@@ -59,18 +71,22 @@ class License(Base, TimestampMixin):
     # M10: "มีเลขอ้างอิงสำหรับตรวจสอบย้อนกลับ" (C3 ใช้เลขนี้ค้นหา)
     license_no: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
 
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # LicenseKind
+
     property_type_id: Mapped[int] = mapped_column(ForeignKey("property_type.id"), nullable=False)
     issued_by_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=False)
     local_authority_id: Mapped[int] = mapped_column(
         ForeignKey("local_authority.id"), nullable=False
     )
 
-    fee_schedule_id: Mapped[int] = mapped_column(ForeignKey("fee_schedule.id"), nullable=False)
-    fee_amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)  # snapshot
+    # ว่างได้เฉพาะ notice_receipt ซึ่งไม่มีค่าธรรมเนียมตามตารางข้อ 4
+    fee_schedule_id: Mapped[int | None] = mapped_column(ForeignKey("fee_schedule.id"))
+    fee_amount: Mapped[float | None] = mapped_column(Numeric(12, 2))  # snapshot
 
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     valid_from: Mapped[date] = mapped_column(Date, nullable=False)
-    valid_until: Mapped[date] = mapped_column(Date, nullable=False)  # S4: เตือนก่อนหมดอายุ
+    # ว่าง = ไม่มีกำหนดหมดอายุ (หนังสือรับรองการแจ้ง)
+    valid_until: Mapped[date | None] = mapped_column(Date)  # S4: เตือนก่อนหมดอายุ
     is_revoked: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
 
-    fee_schedule: Mapped[FeeSchedule] = relationship()
+    fee_schedule: Mapped[FeeSchedule | None] = relationship()

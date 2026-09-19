@@ -90,6 +90,21 @@ def current_fee(db: Session, property_type_id: int, on: date | None = None) -> F
     return Fee(amount=float(row.amount), currency=row.currency, validity_years=row.validity_years)
 
 
+def fee_row(db: Session, property_type_id: int, on: date | None = None) -> FeeSchedule | None:
+    """แถวอัตราค่าธรรมเนียมที่มีผล — ใบอนุญาตต้องชี้กลับมาที่แถวนี้ได้ (โจทย์ข้อ 8)"""
+    today = on or date.today()
+    return db.scalar(
+        select(FeeSchedule)
+        .where(
+            FeeSchedule.property_type_id == property_type_id,
+            FeeSchedule.is_active,
+            FeeSchedule.effective_from <= today,
+            or_(FeeSchedule.effective_to.is_(None), FeeSchedule.effective_to >= today),
+        )
+        .order_by(FeeSchedule.effective_from.desc())
+    )
+
+
 def render_reason(rule: ClassificationRule, answers: Answers) -> str:
     """เติมตัวเลขที่ผู้ใช้ตอบลงใน reason_template
 

@@ -19,6 +19,7 @@ from app.models.audit import AuditLog
 from app.models.authority import LocalAuthority
 from app.models.classification import ApplicationClassification
 from app.models.document import DocumentFile, DocumentReview
+from app.models.license import License
 from app.models.property import Operator, Property
 from app.models.user import OfficerAssignment, User
 from app.services import document as doc_svc
@@ -67,6 +68,7 @@ def _cleanup() -> None:
             shutil.rmtree(doc_svc.storage_root() / row.application_no, ignore_errors=True)
 
         if app_ids:
+            db.execute(delete(License).where(License.application_id.in_(app_ids)))
             file_ids = list(
                 db.scalars(
                     select(DocumentFile.id).where(DocumentFile.application_id.in_(app_ids))
@@ -188,13 +190,13 @@ def authority_id(client, code: str) -> int:
     )
 
 
-def open_application(client, owner_token, code: str) -> str:
+def open_application(client, owner_token, code: str, rooms: int = 6, guests: int = 24) -> str:
     res = client.post(
         "/api/v1/applications",
         headers=auth(owner_token),
         json={
-            "rooms": 6,
-            "guests": 24,
+            "rooms": rooms,
+            "guests": guests,
             "has_restaurant": False,
             "local_authority_id": authority_id(client, code),
             "property_name": f"ที่พักเขต {code}",
@@ -288,6 +290,30 @@ def test_cross_authority_block_applies_to_every_action(client, owner, officer_a,
     )
     assert review.status_code == 403
     assert decide.status_code == 403
+
+
+def test_officer_can_open_documents_in_scope_but_not_across_authorities(client, owner, officer_a):
+    """เจ้าหน้าที่ต้องเปิดไฟล์ได้จริง ไม่งั้นตรวจเอกสารไม่ได้ — แต่ต้องไม่ข้ามเขต"""
+    mine = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, mine)
+    ids = file_ids(client, officer_a, mine)
+
+    opened = client.get(
+        f"/api/v1/officer/applications/{mine}/documents/file/{ids['A02']}",
+        headers=auth(officer_a),
+    )
+    assert opened.status_code == 200
+    assert opened.content == PDF
+
+    other = open_application(client, owner, "KRN-SUB")
+    fill_and_submit(client, owner, other)
+    assert (
+        client.get(
+            f"/api/v1/officer/applications/{other}/documents/file/1",
+            headers=auth(officer_a),
+        ).status_code
+        == 403
+    )
 
 
 def test_operator_cannot_use_officer_endpoints(client, owner):
@@ -450,3 +476,102 @@ def test_rejecting_requires_a_reason(client, owner, officer_a):
         json={"decision": "reject"},
     )
     assert res.status_code == 422
+
+
+# ---------------------------------------------------------------- M10 ใบอนุญาต
+
+
+def approve_fully(client, owner, officer, no: str) -> None:
+    for file_id in file_ids(client, officer, no).values():
+        client.post(
+            f"/api/v1/officer/applications/{no}/documents/{file_id}/review",
+            headers=auth(officer),
+            json={"decision": "pass"},
+        )
+    client.post(
+        f"/api/v1/officer/applications/{no}/decide",
+        headers=auth(officer),
+        json={"decision": "approve"},
+    )
+
+
+def test_m10_notice_receipt_for_properties_that_need_no_licence(client, owner, officer_a):
+    """ที่พักที่ไม่เข้าข่ายโรงแรมก็ต้องได้เอกสารที่พิมพ์ได้พร้อมเลขอ้างอิง
+
+    ตารางข้อ 5 เขียนว่าผู้ประกอบการต้อง "พิมพ์ใบอนุญาตหรือเอกสารอ้างอิง"
+    กรณีนี้ไม่มีค่าธรรมเนียมและไม่มีวันหมดอายุตามตารางข้อ 4
+    """
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+    approve_fully(client, owner, officer_a, no)
+
+    issued = client.post(
+        f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer_a)
+    )
+    assert issued.status_code == 200, issued.text
+    assert issued.json()["status"] == "license_issued"
+
+    doc = client.get(f"/api/v1/applications/{no}/license", headers=auth(owner)).json()
+    assert doc["kind"] == "notice_receipt"
+    assert doc["license_no"].startswith("NR-")
+    assert doc["fee_amount"] is None
+    assert doc["valid_until"] is None, "หนังสือรับรองการแจ้งไม่มีวันหมดอายุ"
+    assert doc["is_expired"] is False
+
+
+def test_m10_licence_snapshots_the_fee_that_applied_at_issue_time(client, owner, officer_a):
+    """ข้อควรคิดข้อ 1 ของโจทย์ข้อ 8: ใบอนุญาตต้องคงอัตราเดิมไว้เสมอ"""
+    no = open_application(client, owner, "PKT-CITY", rooms=20, guests=60)
+    client.post(f"/api/v1/applications/{no}/submit", headers=auth(owner))
+    approve_fully(client, owner, officer_a, no)
+    client.post(f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer_a))
+
+    doc = client.get(f"/api/v1/applications/{no}/license", headers=auth(owner)).json()
+    assert doc["kind"] == "license"
+    assert doc["license_no"].startswith("HL-")
+    assert doc["fee_amount"] == 10000.0
+    assert doc["valid_until"] is not None
+
+    with SessionLocal() as db:
+        application = db.scalar(select(Application).where(Application.application_no == no))
+        row = db.scalar(select(License).where(License.application_id == application.id))
+        # ต้องเก็บทั้งตัวเลขและตัวชี้กลับไปยังอัตราที่ใช้
+        assert row.fee_schedule_id is not None
+        assert float(row.fee_amount) == 10000.0
+
+
+def test_cannot_issue_before_approval_or_twice(client, owner, officer_a):
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    too_early = client.post(
+        f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer_a)
+    )
+    assert too_early.status_code == 422
+    assert "อนุมัติ" in too_early.json()["detail"]
+
+    approve_fully(client, owner, officer_a, no)
+    client.post(f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer_a))
+
+    again = client.post(f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer_a))
+    assert again.status_code == 422
+    assert "ออกเอกสารไปแล้ว" in again.json()["detail"]
+
+
+def test_license_is_only_visible_to_its_owner(client, owner, officer_a):
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+    approve_fully(client, owner, officer_a, no)
+    client.post(f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer_a))
+
+    stranger, _ = _register(client, "stranger")
+    assert (
+        client.get(f"/api/v1/applications/{no}/license", headers=auth(stranger)).status_code == 404
+    )
+
+
+def test_license_endpoint_reports_clearly_when_nothing_issued_yet(client, owner):
+    no = open_application(client, owner, "PKT-CITY")
+    res = client.get(f"/api/v1/applications/{no}/license", headers=auth(owner))
+    assert res.status_code == 404
+    assert "ยังไม่ได้ออกเอกสาร" in res.json()["detail"]

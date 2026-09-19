@@ -9,11 +9,13 @@ import {
   Paperclip,
   PencilLine,
   Plus,
+  Printer,
   Send,
   Upload,
   Users,
   UtensilsCrossed,
 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { Mascot } from "@/components/brand/Mascot";
@@ -254,12 +256,26 @@ function SubmitPanel({
     return (
       <div className="mt-8 flex items-start gap-3 rounded-card border border-line bg-success-bg/40 p-5">
         <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-success-fg" aria-hidden />
-        <div>
-          <p className="font-semibold text-ink">ยื่นคำขอเรียบร้อยแล้ว</p>
-          <p className="mt-1 text-sm text-ink-muted">
-            เจ้าหน้าที่จะตรวจเอกสารและแจ้งผลกลับ ระหว่างนี้แก้ไขเอกสารไม่ได้
-            หากเจ้าหน้าที่ขอให้แก้ไข ระบบจะเปิดให้ส่งใหม่เอง
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-ink">
+            {application.license_no ? "ได้รับอนุมัติแล้ว" : "ยื่นคำขอเรียบร้อยแล้ว"}
           </p>
+          <p className="mt-1 text-sm text-ink-muted">
+            {application.license_no
+              ? "ระบบออกเอกสารให้แล้ว พิมพ์เก็บไว้เป็นหลักฐานหรือใช้ยื่นต่อนายทะเบียนได้"
+              : "เจ้าหน้าที่จะตรวจเอกสารและแจ้งผลกลับ ระหว่างนี้แก้ไขเอกสารไม่ได้ หากเจ้าหน้าที่ขอให้แก้ไข ระบบจะเปิดให้ส่งใหม่เอง"}
+          </p>
+
+          {/* M10: "พิมพ์ใบอนุญาตหรือเอกสารอ้างอิงเมื่อได้รับอนุมัติ" (ตารางข้อ 5) */}
+          {application.license_no && (
+            <Link
+              href={`/operator/applications/${application.application_no}/license`}
+              className="mt-3 inline-flex min-h-12 items-center gap-2 rounded-xl bg-brand-500 px-5 py-3 font-semibold text-white hover:bg-brand-400"
+            >
+              <Printer className="size-5" aria-hidden />
+              เปิดเอกสาร {application.license_no}
+            </Link>
+          )}
         </div>
       </div>
     );

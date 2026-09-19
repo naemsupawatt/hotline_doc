@@ -63,6 +63,13 @@ class DocumentCategory(StrEnum):
     EXTERNAL = "external"  # ต้องขอจากหน่วยงานอื่น (รหัส B01, B02, ...)
 
 
+class LicenseKind(StrEnum):
+    """เอกสารสิทธิ์ที่ระบบออกให้หลังอนุมัติ มีสองแบบตามผลจำแนกประเภท"""
+
+    LICENSE = "license"  # ใบอนุญาตประกอบธุรกิจโรงแรม (ประเภท 1/2) มีค่าธรรมเนียม 5 ปี
+    NOTICE_RECEIPT = "notice_receipt"  # หนังสือรับรองการแจ้ง (ไม่เข้าข่ายโรงแรม)
+
+
 class AccommodationKind(StrEnum):
     """ลักษณะที่พักในแบบหนังสือแจ้งสถานที่พักที่ไม่เป็นโรงแรม
 

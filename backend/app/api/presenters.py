@@ -111,3 +111,64 @@ def to_checklist(
         # มีเอกสารที่ต้องไปขอ แต่ยังไม่รู้ว่าเขตไหน -> หน้าจอต้องให้เลือกก่อน
         needs_local_authority=bool(external) and local_authority_id is None,
     )
+
+
+def to_property_out(prop, local_authority_name: str):
+    """แปลง Property เป็น schema — ใช้ซ้ำทั้งฝั่งผู้ยื่น เจ้าหน้าที่ และหน้าพิมพ์"""
+    from app.schemas.application import AddressOut, PropertyOut
+
+    return PropertyOut(
+        name=prop.name,
+        address=AddressOut(
+            address_no=prop.address_no,
+            moo=prop.moo,
+            soi=prop.soi,
+            road=prop.road,
+            sub_district=prop.sub_district,
+            district=prop.district,
+            postal_code=prop.postal_code,
+            province=prop.province,
+            full_address=prop.full_address,
+        ),
+        room_count=prop.room_count,
+        max_guests=prop.max_guests,
+        has_restaurant=prop.has_restaurant,
+        accommodation_kind=prop.accommodation_kind,
+        accommodation_kind_other=prop.accommodation_kind_other,
+        local_authority_name=local_authority_name,
+    )
+
+
+# ชื่อเอกสารบนหัวกระดาษ แยกตามชนิด
+LICENSE_TITLE = {
+    "license": "ใบอนุญาตประกอบธุรกิจโรงแรม",
+    "notice_receipt": "หนังสือรับรองการแจ้งสถานที่พักที่ไม่เป็นโรงแรม",
+}
+
+
+def to_license_out(db, row, application, prop, authority, holder, issuer):
+    """ประกอบข้อมูลทั้งหมดที่หน้าพิมพ์ต้องใช้ไว้ในก้อนเดียว"""
+    from app.models.classification import PropertyType
+    from app.schemas.license import LicenseOut
+    from app.services import license as license_svc
+
+    ptype = db.get(PropertyType, row.property_type_id)
+
+    return LicenseOut(
+        license_no=row.license_no,
+        kind=row.kind,
+        title=LICENSE_TITLE.get(row.kind, "เอกสารอ้างอิง"),
+        application_no=application.application_no,
+        property_type_name=ptype.name_th if ptype else "-",
+        holder_name=holder.full_name if holder else "-",
+        issued_at=row.issued_at,
+        valid_from=row.valid_from,
+        valid_until=row.valid_until,
+        is_expired=license_svc.is_expired(row),
+        is_revoked=row.is_revoked,
+        fee_amount=float(row.fee_amount) if row.fee_amount is not None else None,
+        fee_currency="THB" if row.fee_amount is not None else None,
+        issued_by_name=issuer.full_name if issuer else "-",
+        local_authority_name=authority.name if authority else "-",
+        property=to_property_out(prop, authority.name if authority else "-"),
+    )

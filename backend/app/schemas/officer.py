@@ -51,6 +51,10 @@ class OfficerApplicationOut(BaseModel):
         description="เอกสารบังคับที่ยังไม่ผ่านการตรวจ",
     )
 
+    # M10 — ปุ่มออกเอกสารขึ้นเมื่ออนุมัติแล้วและยังไม่เคยออก
+    can_issue_license: bool = Field(default=False, examples=[False])
+    license_no: str | None = Field(default=None, examples=[None])
+
 
 class ReviewDocumentRequest(BaseModel):
     decision: ReviewDecision = Field(

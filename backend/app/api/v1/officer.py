@@ -14,6 +14,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from app.api import presenters
@@ -21,7 +22,7 @@ from app.api.deps import DbSession, require_role
 from app.models.application import Application
 from app.models.authority import LocalAuthority
 from app.models.document import DocumentFile
-from app.models.enums import UserRole
+from app.models.enums import ApplicationStatus, UserRole
 from app.models.property import Property
 from app.models.user import User
 from app.schemas.application import AddressOut, PropertyOut
@@ -35,6 +36,7 @@ from app.schemas.wizard import FeeOut
 from app.services import application as app_svc
 from app.services import classification as classify_svc
 from app.services import document as doc_svc
+from app.services import license as license_svc
 from app.services import officer as officer_svc
 
 router = APIRouter()
@@ -153,6 +155,77 @@ def decide(
     return _detail(db, application)
 
 
+@router.post(
+    "/applications/{application_no}/issue-license",
+    response_model=OfficerApplicationOut,
+    summary="ออกใบอนุญาตหรือหนังสือรับรองการแจ้ง (M10)",
+    responses={
+        403: {"description": "คำขอนี้อยู่นอกเขตที่รับผิดชอบ (T-09)"},
+        422: {"description": "คำขอยังไม่อนุมัติ หรือออกเอกสารไปแล้ว"},
+    },
+)
+def issue_license(
+    application_no: str, db: DbSession, current: CurrentOfficer, request: Request
+) -> OfficerApplicationOut:
+    """แยกจากขั้นอนุมัติโดยตั้งใจ
+
+    การอนุมัติกับการออกเอกสารเป็นคนละการกระทำในทางปฏิบัติ และแยกไว้ทำให้
+    เส้นเวลาของคำขออ่านออกว่าอนุมัติเมื่อใด ออกเอกสารเมื่อใด
+    """
+    application = _load_in_scope(db, application_no, current, request)
+    snapshot = app_svc.classification_of(db, application)
+
+    issued, error = license_svc.issue(
+        db,
+        application=application,
+        officer=current,
+        property_type=snapshot.property_type,
+        ip=request.client.host if request.client else None,
+    )
+    if issued is None:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=error)
+
+    db.commit()
+    db.refresh(application)
+    return _detail(db, application)
+
+
+@router.get(
+    "/applications/{application_no}/documents/file/{file_id}",
+    summary="เปิดไฟล์เอกสารเพื่อตรวจ",
+    responses={
+        403: {"description": "คำขอนี้อยู่นอกเขตที่รับผิดชอบ (T-09)"},
+        404: {"description": "ไม่พบไฟล์"},
+    },
+)
+def open_document(
+    application_no: str,
+    file_id: int,
+    db: DbSession,
+    current: CurrentOfficer,
+    request: Request,
+) -> FileResponse:
+    """เจ้าหน้าที่ต้องเปิดไฟล์ได้ ไม่งั้นตรวจเอกสารไม่ได้จริง
+
+    ใช้ guard ตัวเดียวกับหน้าอื่น ไฟล์ของคำขอนอกเขตจึงเปิดไม่ได้เช่นกัน
+    """
+    application = _load_in_scope(db, application_no, current, request)
+
+    row = db.get(DocumentFile, file_id)
+    if row is None or row.application_id != application.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบไฟล์ที่ต้องการ")
+
+    path = doc_svc.storage_root() / row.stored_path
+    if not path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="ไฟล์นี้หาไม่พบในระบบจัดเก็บ กรุณาขอให้ผู้ยื่นอัปโหลดใหม่",
+        )
+
+    return FileResponse(path, media_type=row.mime_type, filename=row.original_name)
+
+
 # ---------------------------------------------------------------- ตัวช่วยภายใน
 
 
@@ -196,6 +269,7 @@ def _detail(db: DbSession, application: Application) -> OfficerApplicationOut:
     )
     files = doc_svc.current_files(db, application.id)
     pending = officer_svc.mandatory_not_approved(db, application)
+    issued = license_svc.existing(db, application.id)
     fee = classify_svc.current_fee(db, ptype.id) if ptype.requires_license else None
 
     return OfficerApplicationOut(
@@ -234,4 +308,6 @@ def _detail(db: DbSession, application: Application) -> OfficerApplicationOut:
         ),
         can_approve=not pending and application.status in officer_svc.OPEN_STATUSES,
         pending_documents=pending,
+        can_issue_license=(application.status == ApplicationStatus.APPROVED and issued is None),
+        license_no=issued.license_no if issued else None,
     )

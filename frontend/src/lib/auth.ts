@@ -106,7 +106,7 @@ export function homeFor(role: UserRole): string {
  *
  * พอสร้างหน้าของบทบาทใดเสร็จ ให้เพิ่มบทบาทนั้นเข้ามาในชุดนี้
  */
-const ROLES_WITH_HOME: ReadonlySet<UserRole> = new Set<UserRole>(["operator"]);
+const ROLES_WITH_HOME: ReadonlySet<UserRole> = new Set<UserRole>(["operator", "officer"]);
 
 export function hasHome(role: UserRole): boolean {
   return ROLES_WITH_HOME.has(role);
