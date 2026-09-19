@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ไฟล์ตัวอย่าง env ต้อง commit ได้ (ไฟล์จริงยังถูก ignore)
+!.env*.example

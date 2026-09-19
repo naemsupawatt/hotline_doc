@@ -11,19 +11,25 @@
 | ส่วน | เทคโนโลยี | พอร์ต |
 |---|---|---|
 | Frontend | Next.js 16 (App Router) + TypeScript + Tailwind v4 | 3000 |
-| Backend | FastAPI + SQLAlchemy 2 + Alembic (Python 3.13) | 8000 |
-| Database | PostgreSQL 16 | 5432 |
+| Backend | FastAPI + SQLAlchemy 2 + Alembic (Python 3.13 ผ่าน uv) | 8000 |
+| Database | PostgreSQL 14 | 5432 |
+
+พัฒนาบน **WSL Ubuntu 22.04** — Ubuntu มาพร้อม Python 3.10 ซึ่งใช้ `StrEnum` ไม่ได้
+โปรเจกต์จึงใช้ Python 3.13 ที่ uv ติดตั้งแยกไว้ให้ (ไม่แตะ python3 ของระบบ)
+และใช้ Node 24 ผ่าน nvm ตามที่ระบุใน `.nvmrc` เพราะ Next.js 16 ใช้ Node 16 ไม่ได้
 
 เอกสาร API สร้างอัตโนมัติจาก FastAPI ที่ **http://localhost:8000/docs**
 ใช้เป็นส่งมอบข้อ "เอกสาร API พร้อมตัวอย่าง request/response" ได้เลย
 
 ## เริ่มใช้งาน
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup.ps1     # ครั้งแรกครั้งเดียว
-powershell -ExecutionPolicy Bypass -File scripts\git-setup.ps1 # ตั้งชื่อสมาชิกก่อนใช้
-powershell -ExecutionPolicy Bypass -File scripts\dev.ps1       # เปิดทั้ง 2 ฝั่ง
+```bash
+./scripts/setup.sh       # ครั้งแรกครั้งเดียว (ติดตั้ง deps + สร้าง DB)
+./scripts/git-setup.sh   # แก้ชื่อสมาชิกในไฟล์ก่อนรัน
+./scripts/dev.sh         # เปิดทั้ง 2 ฝั่ง (Ctrl+C ปิดทั้งคู่)
 ```
+
+ทุกครั้งที่เปิด terminal ใหม่ ให้ `nvm use` ก่อน (หรือตั้ง nvm ให้อ่าน `.nvmrc` อัตโนมัติ)
 
 เปิด http://localhost:3000 จะเห็นหน้าตรวจสอบระบบดีไซน์
 (โลโก้ มาสคอต สถานะ 7 แบบ คอมโพเนนต์กลาง) — ถ้าหน้านี้ขึ้นครบแปลว่าโครงพร้อม
@@ -60,7 +66,7 @@ frontend/
   src/types/           enums ที่ต้องตรงกับฝั่ง backend
 
 docs/                  ส่งมอบข้อ 1, 2, 3, 5, 6
-scripts/               setup / dev / git-setup
+scripts/               setup.sh / dev.sh / git-setup.sh
 ```
 
 ## กติกาของโค้ดที่ทีมตกลงกัน
