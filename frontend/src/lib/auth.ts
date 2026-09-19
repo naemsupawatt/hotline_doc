@@ -23,7 +23,7 @@ export type RegisterInput = {
   first_name: string;
   last_name: string;
   national_id: string;
-  birth_date: string;
+  phone: string;
   email: string;
   password: string;
 };
@@ -94,6 +94,20 @@ export function homeFor(role: UserRole): string {
     case "super_admin":
       return "/admin/settings";
     default:
-      return "/operator/applications";
+      return "/operator/wizard";
   }
+}
+
+/**
+ * หน้าปลายทางของบทบาทนั้นถูกสร้างแล้วหรือยัง
+ *
+ * ระหว่างที่ยังทำไม่ครบทุกบทบาท ต้องเช็กก่อน redirect ไม่งั้นผู้ใช้จะเจอ 404
+ * ทันทีหลังล็อกอินสำเร็จ ซึ่งแย่กว่าการค้างที่หน้าจอ "สำเร็จ"
+ *
+ * พอสร้างหน้าของบทบาทใดเสร็จ ให้เพิ่มบทบาทนั้นเข้ามาในชุดนี้
+ */
+const ROLES_WITH_HOME: ReadonlySet<UserRole> = new Set<UserRole>(["operator"]);
+
+export function hasHome(role: UserRole): boolean {
+  return ROLES_WITH_HOME.has(role);
 }

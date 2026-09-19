@@ -7,19 +7,14 @@
 """
 
 import re
-from datetime import date
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core import phone as phone_utils
 from app.core import thai_id
 
-# อายุมากที่สุดที่ยังถือว่าสมเหตุสมผล — กันปีเกิดที่พิมพ์ผิดจนเป็นไปไม่ได้
-# หมายเหตุ: ไม่ได้บังคับอายุขั้นต่ำ เพราะโจทย์ไม่ได้กำหนดไว้
-# ถ้าภายหลังต้องการบังคับผู้ยื่นอายุ 18 ปีขึ้นไป ให้เพิ่มเงื่อนไขใน _sane_birth_date
-MAX_AGE_YEARS = 120
-
 # ตรวจรูปแบบอีเมลเอง แทนการใช้ EmailStr เพราะ EmailStr คืนข้อความผิดพลาดเป็นภาษาอังกฤษ
-# ซึ่งขัดกับ NFR Usability  ความถูกต้องจริงของอีเมลยืนยันด้วย OTP อยู่แล้ว
+# ซึ่งขัดกับ NFR Usability
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
 
 MIN_PASSWORD_LENGTH = 8
@@ -44,7 +39,10 @@ class RegisterRequest(BaseModel):
         examples=["1100701234561"],
         description="เลขประจำตัวประชาชน 13 หลัก (ใส่ขีดได้ ระบบตัดให้เอง)",
     )
-    birth_date: date = Field(examples=["1990-05-12"], description="วันเดือนปีเกิด (ค.ศ.)")
+    phone: str = Field(
+        examples=["0812345678"],
+        description="หมายเลขโทรศัพท์ (ใส่ขีดได้ ระบบตัดให้เอง) ใช้เข้าสู่ระบบได้เช่นเดียวกับอีเมล",
+    )
     email: str = Field(max_length=160, examples=["somchai@example.com"])
     password: str = Field(
         max_length=128,
@@ -86,15 +84,16 @@ class RegisterRequest(BaseModel):
             raise ValueError("เลขประจำตัวประชาชนไม่ถูกต้อง กรุณาตรวจสอบตัวเลขอีกครั้ง")
         return digits
 
-    @field_validator("birth_date")
+    @field_validator("phone")
     @classmethod
-    def _sane_birth_date(cls, v: date) -> date:
-        today = date.today()
-        if v >= today:
-            raise ValueError("วันเดือนปีเกิดต้องเป็นวันที่ผ่านมาแล้ว")
-        if (today - v).days > MAX_AGE_YEARS * 365.25:
-            raise ValueError("วันเดือนปีเกิดไม่ถูกต้อง กรุณาตรวจสอบปีเกิดอีกครั้ง")
-        return v
+    def _valid_phone(cls, v: str) -> str:
+        # เก็บเป็นตัวเลขล้วน เพื่อให้ค้นหาตอนเข้าสู่ระบบเจอไม่ว่าผู้ใช้จะใส่ขีดหรือไม่
+        digits = phone_utils.normalize(v)
+        if not phone_utils.is_valid(digits):
+            raise ValueError(
+                "หมายเลขโทรศัพท์ไม่ถูกต้อง กรุณากรอกเบอร์มือถือ 10 หลัก เช่น 0812345678"
+            )
+        return digits
 
 
 class UserOut(BaseModel):

@@ -1,7 +1,8 @@
 "use client";
 
-import { ArrowRight, Lock, Mail } from "lucide-react";
+import { ArrowRight, Lock, Mail, Phone } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Mascot } from "@/components/brand/Mascot";
@@ -9,14 +10,19 @@ import { AuthLayout } from "@/components/common/AuthLayout";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { ApiError } from "@/lib/api";
-import { type AuthUser, login } from "@/lib/auth";
+import { type AuthUser, hasHome, homeFor, login } from "@/lib/auth";
+
+/** ผูก aria-controls ของปุ่มเข้ากับกล่องคำแนะนำ ให้ screen reader รู้ว่าปุ่มเปิดอะไร */
+const PASSWORD_HELP_ID = "forgot-password-help";
 
 export function LoginView() {
+  const router = useRouter();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [showPasswordHelp, setShowPasswordHelp] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
@@ -31,7 +37,15 @@ export function LoginView() {
 
     setPending(true);
     try {
-      setUser(await login(identifier, password, remember));
+      const signedIn = await login(identifier, password, remember);
+
+      // บทบาทที่ยังไม่มีหน้าปลายทาง ให้ค้างที่หน้าจอ "สำเร็จ" ดีกว่าพาไป 404
+      if (hasHome(signedIn.role)) {
+        router.push(homeFor(signedIn.role));
+        return; // คง pending ไว้จนกว่าจะเปลี่ยนหน้า ผู้ใช้จะได้ไม่กดซ้ำ
+      }
+      setUser(signedIn);
+      setPending(false);
     } catch (err) {
       // NFR Usability: แสดงข้อความที่ผู้ใช้ทั่วไปเข้าใจ ไม่ใช่ error code ดิบ
       setError(
@@ -39,7 +53,6 @@ export function LoginView() {
           ? err.message
           : "เชื่อมต่อระบบไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง",
       );
-    } finally {
       setPending(false);
     }
   }
@@ -67,9 +80,9 @@ export function LoginView() {
               label="อีเมล หรือ เบอร์โทรศัพท์"
               icon={Mail}
               type="text"
-              inputMode="email"
               autoComplete="username"
-              placeholder="name@example.com"
+              placeholder="name@example.com หรือ 0812345678"
+              hint="ใช้ได้ทั้งอีเมลและเบอร์โทรที่สมัครไว้"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
             />
@@ -95,14 +108,18 @@ export function LoginView() {
                 จดจำการเข้าสู่ระบบ
               </label>
 
-              {/* TODO M1: ต่อหน้าขอรหัสผ่านใหม่ */}
               <button
                 type="button"
+                onClick={() => setShowPasswordHelp((v) => !v)}
+                aria-expanded={showPasswordHelp}
+                aria-controls={PASSWORD_HELP_ID}
                 className="text-sm font-semibold text-brand-600 underline underline-offset-4 hover:text-brand-400"
               >
                 ลืมรหัสผ่าน
               </button>
             </div>
+
+            {showPasswordHelp ? <PasswordHelp /> : null}
 
             {error ? (
               // role="alert" ให้ screen reader อ่านทันทีที่ข้อความปรากฏ
@@ -135,11 +152,37 @@ export function LoginView() {
   );
 }
 
-/** สถานะหลังเข้าสู่ระบบสำเร็จ
+/** คำแนะนำเมื่อลืมรหัสผ่าน
 
-    ยังไม่ redirect เพราะหน้าปลายทางของแต่ละบทบาท (/operator, /officer, ...)
-    ยังไม่ถูกสร้าง — ถ้า push ไปตอนนี้ผู้ใช้จะเจอ 404 ทันทีหลังกดปุ่ม
-    เมื่อสร้างหน้าเหล่านั้นแล้วให้เปลี่ยนเป็น router.push(homeFor(user.role))
+    รอบนี้ยังไม่ทำการตั้งรหัสผ่านใหม่ด้วยตนเอง เพราะไม่อยู่ใน Must Have
+    และการส่งลิงก์รีเซ็ตต้องมีระบบอีเมลจริงซึ่งเกินขอบเขต 12 ชั่วโมง
+    แต่ปุ่มต้องตอบสนองเสมอ ปุ่มที่กดแล้วเงียบทำให้ผู้ใช้คิดว่าระบบค้าง
+    (NFR Usability) จึงบอกช่องทางที่ผู้ใช้ทำได้จริงแทน
+*/
+function PasswordHelp() {
+  return (
+    <div
+      id={PASSWORD_HELP_ID}
+      className="rounded-xl border border-line bg-canvas px-4 py-3 text-sm text-ink"
+    >
+      <p className="font-semibold">ยังตั้งรหัสผ่านใหม่ด้วยตนเองไม่ได้ในขณะนี้</p>
+      <p className="mt-1.5 text-ink-muted">
+        กรุณาติดต่อเจ้าหน้าที่องค์กรปกครองส่วนท้องถิ่นในเขตที่พักของคุณ
+        เพื่อขอตั้งรหัสผ่านใหม่ โดยเตรียมเลขประจำตัวประชาชนและเบอร์โทรที่ใช้สมัครไว้
+      </p>
+      <p className="mt-2 flex items-center gap-2 text-ink-muted">
+        <Phone className="size-4 shrink-0" aria-hidden />
+        ดูเบอร์ติดต่อของแต่ละท้องถิ่นได้จากหน้ารายการหน่วยงาน
+      </p>
+    </div>
+  );
+}
+
+/** สถานะหลังเข้าสู่ระบบสำเร็จ สำหรับบทบาทที่ยังไม่มีหน้าปลายทาง
+
+    ผู้ประกอบการถูก redirect ไปหน้าประเมินที่พักแล้ว จอนี้จึงเหลือไว้ให้
+    เจ้าหน้าที่ / ส่วนกลาง / ผู้ดูแลระบบ จนกว่าหน้าของแต่ละบทบาทจะเสร็จ
+    (เพิ่มบทบาทลง ROLES_WITH_HOME ใน lib/auth.ts เมื่อสร้างหน้าเสร็จ)
 */
 function SignedIn({ user }: { user: AuthUser }) {
   return (

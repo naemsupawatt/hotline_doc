@@ -1,0 +1,133 @@
+"""M2/M3/M4 — schema ของระบบนำทางแบบถามตอบ
+
+ใส่ examples= ทุกช่องตามกฎของทีม เพราะ FastAPI เอาไปแสดงใน /docs
+ซึ่งเป็น deliverable "เอกสาร API พร้อมตัวอย่าง request/response"
+
+ข้อมูลตัวอย่างทั้งหมดเป็นข้อมูลสมมติ (กติกาข้อ 14)
+"""
+
+from pydantic import BaseModel, Field
+
+# เพดานที่รับได้ของช่องกรอก — ไม่ใช่เกณฑ์จำแนกประเภท
+# เกณฑ์จำแนกอยู่ในตาราง classification_rule เท่านั้น ห้ามเอามาไว้ที่นี่
+MAX_ROOMS_INPUT = 9999
+MAX_GUESTS_INPUT = 99999
+
+
+class WizardAnswers(BaseModel):
+    """คำถามสามข้อที่ตารางข้อ 4 ใช้ตัดสิน"""
+
+    rooms: int = Field(
+        ge=1,
+        le=MAX_ROOMS_INPUT,
+        examples=[6],
+        description="จำนวนห้องพักทั้งหมด",
+    )
+    guests: int = Field(
+        ge=1,
+        le=MAX_GUESTS_INPUT,
+        examples=[24],
+        description="จำนวนผู้เข้าพักสูงสุดที่รับได้",
+    )
+    has_restaurant: bool = Field(
+        default=False,
+        examples=[False],
+        description="มีห้องอาหารในสถานที่หรือไม่",
+    )
+    local_authority_id: int | None = Field(
+        default=None,
+        examples=[5],
+        description=(
+            "อปท. ที่ที่พักตั้งอยู่ — ไม่บังคับตอนประเมิน "
+            "แต่ต้องมีจึงจะบอกได้ว่าเอกสารหมวดขอจากหน่วยงานอื่นต้องไปติดต่อที่ใด (M4)"
+        ),
+    )
+
+
+class FeeOut(BaseModel):
+    amount: float = Field(examples=[10000.0])
+    currency: str = Field(examples=["THB"])
+    validity_years: int = Field(examples=[5])
+
+
+class ContactPointOut(BaseModel):
+    """M4: ต้องไปติดต่อหน่วยงานใด ที่ท้องถิ่นใด ใช้เวลาเท่าใด"""
+
+    agency_name: str = Field(examples=["กองช่าง องค์กรปกครองส่วนท้องถิ่น"])
+    local_authority_name: str | None = Field(default=None, examples=["เทศบาลตำบลกะรน"])
+    office_name: str = Field(examples=["กองช่าง เทศบาลตำบลกะรน"])
+    address: str | None = Field(default=None, examples=["ถนนกะรน ตำบลกะรน อำเภอเมืองภูเก็ต"])
+    phone: str | None = Field(default=None, examples=["076-000-001"])
+    office_hours: str | None = Field(default=None, examples=["จันทร์–ศุกร์ 08.30–16.30 น."])
+    estimated_days: int | None = Field(default=None, examples=[30])
+    notes: str | None = Field(default=None, examples=["ควรโทรนัดหมายล่วงหน้า"])
+
+
+class DocumentOut(BaseModel):
+    code: str = Field(examples=["B01"])
+    name_th: str = Field(examples=["ใบอนุญาตก่อสร้างอาคาร (อ.1)"])
+    description: str | None = Field(default=None)
+    is_mandatory: bool = Field(examples=[True])
+
+    # หน้าจอใช้ตัดสินว่าจะขึ้นปุ่ม "กรอกแบบฟอร์ม" หรือ "เลือกไฟล์"
+    is_system_form: bool = Field(examples=[False])
+    allows_multiple: bool = Field(examples=[False])
+    accepted_mime: list[str] = Field(examples=[["application/pdf"]])
+
+    # M4 — มีเฉพาะเอกสารหมวดที่ต้องขอจากหน่วยงานอื่น
+    preparation_note: str | None = Field(
+        default=None,
+        examples=["เตรียมไปที่หน่วยงาน: สำเนาบัตรประจำตัวประชาชน, สำเนาทะเบียนบ้าน, ..."],
+    )
+    estimated_days: int | None = Field(default=None, examples=[30])
+    contact_point: ContactPointOut | None = None
+
+
+class DocumentChecklistOut(BaseModel):
+    """M3: "แบ่งออกเป็น 2 หมวดชัดเจน" — แยกให้แล้วตั้งแต่ชั้น API
+    หน้าจอจึงไม่ต้องรู้กติกาการแบ่ง แค่วาดสองกล่อง
+    """
+
+    self_service: list[DocumentOut] = Field(description="ผู้ประกอบการทำเองได้")
+    external: list[DocumentOut] = Field(description="ต้องขอจากหน่วยงานอื่น")
+    needs_local_authority: bool = Field(
+        examples=[False],
+        description=(
+            "true = มีเอกสารที่ต้องขอจากหน่วยงานอื่น แต่ผู้ใช้ยังไม่ได้เลือก อปท. หน้าจอต้องให้เลือกก่อนจึงจะบอกจุดติดต่อได้"
+        ),
+    )
+
+
+class ClassifyResult(BaseModel):
+    """ผลจำแนก — M2 บังคับให้มี "เหตุผลว่าทำไมจึงได้ผลนั้น" ไม่ใช่แค่ชื่อประเภท"""
+
+    property_type_code: str = Field(examples=["not_hotel"])
+    property_type_name: str = Field(examples=["ไม่เข้าข่ายโรงแรม"])
+    requires_license: bool = Field(examples=[False])
+    is_out_of_scope: bool = Field(examples=[False])
+
+    reason: str = Field(
+        examples=[
+            "ที่พักของคุณมี 6 ห้อง และรับผู้เข้าพักได้ 24 คน "
+            "ซึ่งไม่เกินเกณฑ์ยกเว้น (ไม่เกิน 8 ห้อง และไม่เกิน 30 คน) ทั้งสองข้อ"
+        ]
+    )
+    outcome_message: str = Field(
+        examples=["ไม่ต้องขอใบอนุญาตโรงแรม แต่ต้องดำเนินการแจ้งตามแนวทางที่กำหนด ..."]
+    )
+
+    # ชี้กลับไปยังกฎที่ใช้ตัดสิน — ใช้สาธิต US-09 ว่าผลมาจากข้อมูลใน DB จริง
+    matched_rule_code: str | None = Field(default=None, examples=["RULE-NOT-HOTEL"])
+
+    fee: FeeOut | None = None
+    documents: DocumentChecklistOut
+
+
+class LocalAuthorityOut(BaseModel):
+    id: int = Field(examples=[5])
+    code: str = Field(examples=["KRN-SUB"])
+    name: str = Field(examples=["เทศบาลตำบลกะรน"])
+    kind: str = Field(examples=["เทศบาลตำบล"])
+    district: str = Field(examples=["เมืองภูเก็ต"])
+
+    model_config = {"from_attributes": True}

@@ -1,8 +1,7 @@
 import { z } from "zod";
 
+import { isValidPhone, normalizePhone } from "@/lib/phone";
 import { isValidThaiId, normalizeThaiId } from "@/lib/thaiId";
-
-const MAX_AGE_YEARS = 120;
 
 /**
  * เงื่อนไขต้องตรงกับ backend/app/schemas/auth.py
@@ -29,14 +28,17 @@ export const registerSchema = z
       .min(1, "กรุณากรอกเลขประจำตัวประชาชน")
       .refine((v) => normalizeThaiId(v).length === 13, "เลขประจำตัวประชาชนต้องมี 13 หลัก")
       .refine(isValidThaiId, "เลขประจำตัวประชาชนไม่ถูกต้อง กรุณาตรวจสอบตัวเลขอีกครั้ง"),
-    birth_date: z
+    phone: z
       .string()
-      .min(1, "กรุณาเลือกวันเดือนปีเกิด")
-      .refine((v) => new Date(v) < new Date(), "วันเดือนปีเกิดต้องเป็นวันที่ผ่านมาแล้ว")
-      .refine((v) => {
-        const years = (Date.now() - new Date(v).getTime()) / (365.25 * 86_400_000);
-        return years <= MAX_AGE_YEARS;
-      }, "วันเดือนปีเกิดไม่ถูกต้อง กรุณาตรวจสอบปีเกิดอีกครั้ง"),
+      .min(1, "กรุณากรอกหมายเลขโทรศัพท์")
+      .refine(
+        (v) => normalizePhone(v).length >= 9,
+        "หมายเลขโทรศัพท์สั้นเกินไป กรุณากรอกให้ครบ",
+      )
+      .refine(
+        isValidPhone,
+        "หมายเลขโทรศัพท์ไม่ถูกต้อง กรุณากรอกเบอร์มือถือ 10 หลัก เช่น 0812345678",
+      ),
     email: z
       .string()
       .trim()

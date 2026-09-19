@@ -47,6 +47,12 @@ class Property(Base, TimestampMixin):
     max_guests: Mapped[int] = mapped_column(Integer, nullable=False)
     has_restaurant: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
 
+    # ลักษณะที่พัก (AccommodationKind) — ช่องหนึ่งในแบบหนังสือแจ้งฯ
+    # เก็บที่นี่ ไม่ใช่ที่ตัวหนังสือแจ้ง เพราะเป็นคุณสมบัติของ "ที่พัก" ไม่ใช่ของ "เอกสาร"
+    # ถ้าเก็บซ้ำในเอกสารจะผิด 3NF และแก้ที่เดียวไม่ครบเมื่อข้อมูลเปลี่ยน
+    accommodation_kind: Mapped[str | None] = mapped_column(String(24))
+    accommodation_kind_other: Mapped[str | None] = mapped_column(String(120))
+
     # ผู้ประกอบการปักหมุดบนแผนที่ (ข้อ 5 ของโจทย์)
     latitude: Mapped[float | None] = mapped_column(Numeric(10, 7))
     longitude: Mapped[float | None] = mapped_column(Numeric(10, 7))

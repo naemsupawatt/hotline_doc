@@ -39,12 +39,29 @@ class DocumentType(Base, TimestampMixin):
     # หมวด B เท่านั้นที่มีค่า — หมวด A ผู้ประกอบการทำเองได้
     issuing_agency_id: Mapped[int | None] = mapped_column(ForeignKey("issuing_agency.id"))
     preparation_note: Mapped[str | None] = mapped_column(Text())  # M4: ใช้เอกสารประกอบอะไร
-    estimated_days: Mapped[int | None] = mapped_column(Integer)    # M4: ใช้เวลาประมาณเท่าใด
+    estimated_days: Mapped[int | None] = mapped_column(Integer)  # M4: ใช้เวลาประมาณเท่าใด
+
+    # บางฉบับผู้ใช้ "กรอกในระบบ" แทนการอัปโหลด เช่น แบบหนังสือแจ้งสถานที่พักฯ
+    # ระบบสร้างเอกสารให้จากข้อมูลที่กรอก + ลายเซ็น แล้วพิมพ์ออกมาได้
+    is_system_form: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
+
+    # เอกสารบางฉบับแนบได้หลายไฟล์ เช่น ภาพถ่ายอาคารหลายมุม
+    allows_multiple: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
+
+    # ชนิดไฟล์ที่ยอมรับ คั่นด้วยจุลภาค (M5: ต้องตรวจชนิดไฟล์)
+    # เก็บใน DB ไม่ใช่ hard-code เพราะเป็นส่วนหนึ่งของ "รายการเอกสาร" ที่ US-09 ให้แก้ได้
+    accepted_mime: Mapped[str] = mapped_column(
+        String(200), server_default="application/pdf,image/jpeg,image/png", nullable=False
+    )
 
     display_order: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
 
     issuing_agency: Mapped[IssuingAgency | None] = relationship()
+
+    @property
+    def accepted_mime_list(self) -> list[str]:
+        return [m.strip() for m in self.accepted_mime.split(",") if m.strip()]
 
 
 class DocumentRequirement(Base, TimestampMixin):
@@ -81,7 +98,11 @@ class DocumentFile(Base, TimestampMixin):
     __tablename__ = "document_file"
     __table_args__ = (
         UniqueConstraint(
-            "application_id", "document_type_id", "version_no", name="uq_docfile_version"
+            "application_id",
+            "document_type_id",
+            "slot_no",
+            "version_no",
+            name="uq_docfile_version",
         ),
     )
 
@@ -89,13 +110,21 @@ class DocumentFile(Base, TimestampMixin):
     application_id: Mapped[int] = mapped_column(ForeignKey("application.id"), nullable=False)
     document_type_id: Mapped[int] = mapped_column(ForeignKey("document_type.id"), nullable=False)
 
+    # ลำดับไฟล์ภายในเอกสารชนิดเดียวกัน — เอกสารทั่วไปมี slot เดียว (1)
+    # ส่วนภาพถ่ายอาคารที่แนบได้หลายมุม จะเป็น slot 1, 2, 3, ...
+    #
+    # ต้องแยกจาก version_no ให้ชัด: slot = "คนละไฟล์", version = "ไฟล์เดิมที่ส่งใหม่"
+    # ถ้าใช้ version_no แทนการแนบหลายไฟล์ ภาพมุมที่สองจะกลายเป็นการ
+    # "แก้ไข" ภาพมุมแรก ซึ่งทำให้ย้อนดูสิ่งที่เจ้าหน้าที่เคยตรวจไม่ได้ (กฎข้อ 5 ของทีม)
+    slot_no: Mapped[int] = mapped_column(Integer, server_default="1", nullable=False)
+
     version_no: Mapped[int] = mapped_column(Integer, server_default="1", nullable=False)
     is_current: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
 
     stored_path: Mapped[str] = mapped_column(String(300), nullable=False)
     original_name: Mapped[str] = mapped_column(String(255), nullable=False)
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)  # M5: ตรวจชนิดไฟล์
-    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)     # M5: ตรวจขนาดไฟล์
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)  # M5: ตรวจขนาดไฟล์
 
     status: Mapped[str] = mapped_column(
         String(24), server_default=DocumentStatus.UPLOADED, nullable=False
@@ -122,8 +151,6 @@ class DocumentReview(Base, TimestampMixin):
     reviewer_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=False)
     decision: Mapped[str] = mapped_column(String(24), nullable=False)  # ReviewDecision
     comment: Mapped[str | None] = mapped_column(Text())  # บังคับเมื่อ decision = fail
-    reviewed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     document_file: Mapped[DocumentFile] = relationship(back_populates="reviews")

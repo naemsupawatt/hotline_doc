@@ -5,9 +5,9 @@ NFR ความปลอดภัย: password_hash เก็บ bcrypt เท�
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -27,6 +27,9 @@ class User(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str | None] = mapped_column(String(160), unique=True)
+
+    # เก็บเป็นตัวเลขล้วนเสมอ (ดู core/phone.py) เพราะใช้เป็นกุญแจเข้าสู่ระบบ
+    # อีกทางหนึ่งตาม M1 ถ้าเก็บทั้งแบบมีขีดและไม่มีขีด จะหาไม่เจอสลับกัน
     phone: Mapped[str | None] = mapped_column(String(20), unique=True)
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
 
@@ -47,7 +50,6 @@ class User(Base, TimestampMixin):
     # ต้นแบบนี้ยังเก็บเป็นข้อความธรรมดาเพราะ key management อยู่นอกขอบเขตการสาธิต
     # และข้อมูลทั้งหมดเป็นข้อมูลจำลองตามกติกาข้อ 14
     national_id: Mapped[str | None] = mapped_column(String(13), unique=True)
-    birth_date: Mapped[date | None] = mapped_column(Date)
 
     role: Mapped[str] = mapped_column(String(20), server_default=UserRole.OPERATOR, nullable=False)
 

@@ -1,4 +1,4 @@
-"""M1 — สมัครสมาชิก / เข้าสู่ระบบ / ยืนยันตัวตนด้วย OTP
+"""M1 — สมัครสมาชิก / เข้าสู่ระบบ
 
 เจ้าของงานส่วนนี้: <ใส่ชื่อสมาชิก>
 """
@@ -17,7 +17,7 @@ router = APIRouter()
     "/login",
     response_model=TokenResponse,
     summary="เข้าสู่ระบบด้วยอีเมลหรือเบอร์โทร",
-    responses={401: {"description": "ข้อมูลเข้าสู่ระบบไม่ถูกต้อง หรือยังไม่ยืนยันตัวตน"}},
+    responses={401: {"description": "อีเมล เบอร์โทรศัพท์ หรือรหัสผ่านไม่ถูกต้อง"}},
 )
 def login(payload: LoginRequest, db: DbSession, request: Request) -> TokenResponse:
     ip = request.client.host if request.client else None
@@ -40,7 +40,7 @@ def login(payload: LoginRequest, db: DbSession, request: Request) -> TokenRespon
     response_model=TokenResponse,
     status_code=status.HTTP_201_CREATED,
     summary="สมัครสมาชิกสำหรับผู้ประกอบการ",
-    responses={409: {"description": "อีเมลหรือเลขประจำตัวประชาชนถูกใช้สมัครไว้แล้ว"}},
+    responses={409: {"description": "อีเมล เบอร์โทรศัพท์ หรือเลขประจำตัวประชาชนถูกใช้สมัครไว้แล้ว"}},
 )
 def register(payload: RegisterRequest, db: DbSession, request: Request) -> TokenResponse:
     ip = request.client.host if request.client else None
@@ -49,7 +49,7 @@ def register(payload: RegisterRequest, db: DbSession, request: Request) -> Token
         first_name=payload.first_name,
         last_name=payload.last_name,
         national_id=payload.national_id,
-        birth_date=payload.birth_date,
+        phone=payload.phone,
         email=payload.email,
         password=payload.password,
         ip=ip,

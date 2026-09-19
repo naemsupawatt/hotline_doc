@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
 from app.core.security import hash_password
-from app.models.authority import LocalAuthority
+from app.models.authority import ContactPoint, IssuingAgency, LocalAuthority
 from app.models.classification import ClassificationRule, PropertyType
+from app.models.document import DocumentRequirement, DocumentType
 from app.models.license import FeeSchedule
 from app.models.user import OfficerAssignment, User
 from app.seeds.classification import (
@@ -20,6 +21,12 @@ from app.seeds.classification import (
     EFFECTIVE_FROM,
     FEE_SCHEDULES,
     PROPERTY_TYPES,
+)
+from app.seeds.documents import (
+    CONTACT_POINT_DEFAULTS,
+    DOCUMENT_REQUIREMENTS,
+    DOCUMENT_TYPES,
+    ISSUING_AGENCIES,
 )
 from app.seeds.local_authorities import LOCAL_AUTHORITIES
 from app.seeds.users import DEMO_PASSWORD, DEMO_USERS
@@ -90,6 +97,111 @@ def seed_fee_schedules(db: Session, types: dict[str, PropertyType]) -> int:
     return len(FEE_SCHEDULES)
 
 
+def seed_issuing_agencies(db: Session) -> dict[str, IssuingAgency]:
+    result: dict[str, IssuingAgency] = {}
+    for row in ISSUING_AGENCIES:
+        obj = db.scalar(select(IssuingAgency).where(IssuingAgency.code == row["code"]))
+        if obj is None:
+            obj = IssuingAgency(**row)
+            db.add(obj)
+        else:
+            for k, v in row.items():
+                setattr(obj, k, v)
+        result[row["code"]] = obj
+    db.flush()
+    return result
+
+
+def seed_document_types(db: Session, agencies: dict[str, IssuingAgency]) -> dict[str, DocumentType]:
+    result: dict[str, DocumentType] = {}
+    for row in DOCUMENT_TYPES:
+        data = dict(row)
+        agency_code = data.pop("issuing_agency", None)
+        agency_id = agencies[agency_code].id if agency_code else None
+
+        obj = db.scalar(select(DocumentType).where(DocumentType.code == data["code"]))
+        if obj is None:
+            obj = DocumentType(**data, issuing_agency_id=agency_id)
+            db.add(obj)
+        else:
+            for k, v in data.items():
+                setattr(obj, k, v)
+            obj.issuing_agency_id = agency_id
+        result[data["code"]] = obj
+    db.flush()
+    return result
+
+
+def seed_document_requirements(
+    db: Session, types: dict[str, PropertyType], docs: dict[str, DocumentType]
+) -> int:
+    for row in DOCUMENT_REQUIREMENTS:
+        ptype = types[row["property_type"]]
+        dtype = docs[row["document_type"]]
+        obj = db.scalar(
+            select(DocumentRequirement).where(
+                DocumentRequirement.property_type_id == ptype.id,
+                DocumentRequirement.document_type_id == dtype.id,
+            )
+        )
+        if obj is None:
+            db.add(
+                DocumentRequirement(
+                    property_type_id=ptype.id,
+                    document_type_id=dtype.id,
+                    is_mandatory=row["is_mandatory"],
+                    note=row.get("note"),
+                )
+            )
+        else:
+            obj.is_mandatory = row["is_mandatory"]
+            obj.note = row.get("note")
+    db.flush()
+    return len(DOCUMENT_REQUIREMENTS)
+
+
+def seed_contact_points(db: Session, agencies: dict[str, IssuingAgency]) -> int:
+    """จุดติดต่อของกองช่างครบทั้ง 19 อปท. — ตอบ M4 ว่า "ที่ท้องถิ่นใด"
+
+    สร้างจากรายชื่อ อปท. ในฐานข้อมูล ไม่ใช่รายการที่เขียนซ้ำไว้ในไฟล์ seed
+    เพิ่ม อปท. ใหม่แล้วรัน seed ซ้ำ จุดติดต่อจะตามมาเองโดยไม่ต้องแก้อะไร
+    """
+    cfg = CONTACT_POINT_DEFAULTS
+    agency = agencies[cfg["issuing_agency"]]
+    count = 0
+
+    for authority in db.scalars(select(LocalAuthority)).all():
+        obj = db.scalar(
+            select(ContactPoint).where(
+                ContactPoint.issuing_agency_id == agency.id,
+                ContactPoint.local_authority_id == authority.id,
+            )
+        )
+        values = {
+            "office_name": cfg["office_name_template"].format(authority_name=authority.name),
+            "address": authority.address,
+            "phone": authority.phone,
+            "office_hours": cfg["office_hours"],
+            "estimated_days": cfg["estimated_days"],
+            "notes": cfg["notes"],
+        }
+        if obj is None:
+            db.add(
+                ContactPoint(
+                    issuing_agency_id=agency.id,
+                    local_authority_id=authority.id,
+                    **values,
+                )
+            )
+        else:
+            for k, v in values.items():
+                setattr(obj, k, v)
+        count += 1
+
+    db.flush()
+    return count
+
+
 def seed_demo_users(db: Session) -> int:
     """บัญชีสาธิต 4 บทบาท — hash รหัสผ่านใหม่เฉพาะตอนสร้างครั้งแรก
     เพื่อไม่ให้รันซ้ำแล้ว bcrypt ทำงานใหม่ทุกครั้งโดยไม่จำเป็น
@@ -131,6 +243,10 @@ def main() -> None:
         types = seed_property_types(db)
         n_rules = seed_classification_rules(db, types)
         n_fees = seed_fee_schedules(db, types)
+        agencies = seed_issuing_agencies(db)
+        docs = seed_document_types(db, agencies)
+        n_reqs = seed_document_requirements(db, types, docs)
+        n_contacts = seed_contact_points(db, agencies)
         n_users = seed_demo_users(db)
         db.commit()
 
@@ -138,6 +254,10 @@ def main() -> None:
     print(f"  ประเภทที่พัก       {len(types)} ประเภท")
     print(f"  กฎจำแนกประเภท     {n_rules} กฎ")
     print(f"  อัตราค่าธรรมเนียม  {n_fees} รายการ")
+    print(f"  หน่วยงานออกเอกสาร  {len(agencies)} แห่ง")
+    print(f"  ชนิดเอกสาร         {len(docs)} รายการ")
+    print(f"  ข้อกำหนดเอกสาร     {n_reqs} รายการ")
+    print(f"  จุดติดต่อ           {n_contacts} จุด")
     print(f"  บัญชีสาธิต         {n_users} บัญชี (รหัสผ่าน {DEMO_PASSWORD})")
 
 

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.security import decode_access_token
+from app.models.enums import UserRole
 from app.models.user import User
 
 bearer = HTTPBearer(auto_error=False)
@@ -47,5 +48,28 @@ def get_current_user(
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
-# TODO: require_role(*roles)                 -> guard ตามบทบาท (NFR: RBAC)
+
+def require_role(*allowed: UserRole):
+    """guard ตามบทบาท (NFR: Role-based Authorization)
+
+    คืน dependency ที่ปล่อยผ่านเฉพาะบทบาทที่ระบุ
+    ใช้แบบ: `user: Annotated[User, Depends(require_role(UserRole.OPERATOR))]`
+
+    ข้อความ 403 ต้องบอกผู้ใช้ว่า "ทำไม่ได้เพราะบทบาทไม่ตรง" ด้วยภาษาคน
+    ไม่ใช่ปล่อยข้อความดิบของเฟรมเวิร์กออกไป (NFR Usability)
+    """
+
+    def guard(current: CurrentUser) -> User:
+        if current.role not in {r.value for r in allowed}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="บัญชีของคุณไม่มีสิทธิ์ใช้งานส่วนนี้",
+            )
+        return current
+
+    return guard
+
+
+CurrentOperator = Annotated[User, Depends(require_role(UserRole.OPERATOR))]
+
 # TODO: require_same_authority(application)  -> guard T-09 + เขียน AuditLog เมื่อถูกปฏิเสธ
