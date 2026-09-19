@@ -15,7 +15,21 @@
 """
 
 from app.core.db import Base  # noqa: F401
+from app.models.application import Application, ApplicationStatusHistory  # noqa: F401
+from app.models.audit import AuditLog, Notification  # noqa: F401
+from app.models.authority import ContactPoint, IssuingAgency, LocalAuthority  # noqa: F401
 from app.models.base import TimestampMixin  # noqa: F401
+from app.models.classification import (  # noqa: F401
+    ApplicationClassification,
+    ClassificationRule,
+    PropertyType,
+)
+from app.models.document import (  # noqa: F401
+    DocumentFile,
+    DocumentRequirement,
+    DocumentReview,
+    DocumentType,
+)
 from app.models.enums import (  # noqa: F401
     ApplicationStatus,
     ClassificationResult,
@@ -24,3 +38,6 @@ from app.models.enums import (  # noqa: F401
     ReviewDecision,
     UserRole,
 )
+from app.models.license import FeeSchedule, License  # noqa: F401
+from app.models.property import Operator, Property  # noqa: F401
+from app.models.user import OfficerAssignment, User  # noqa: F401
