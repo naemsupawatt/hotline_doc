@@ -5,12 +5,13 @@ NFR ความปลอดภัย: password_hash เก็บ bcrypt เท�
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
+from app.core.thai_id import mask as mask_national_id
 from app.models.base import TimestampMixin
 from app.models.enums import UserRole
 
@@ -28,7 +29,26 @@ class User(Base, TimestampMixin):
     email: Mapped[str | None] = mapped_column(String(160), unique=True)
     phone: Mapped[str | None] = mapped_column(String(20), unique=True)
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
-    full_name: Mapped[str] = mapped_column(String(160), nullable=False)
+
+    # เก็บชื่อ-นามสกุลแยกกัน ไม่เก็บ full_name ซ้ำอีกคอลัมน์
+    # (ชื่อเต็มเป็นค่าที่คำนวณได้จากสองคอลัมน์นี้ การเก็บซ้ำจะผิด 3NF)
+    first_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(80), nullable=False)
+
+    # ---------- ข้อมูลส่วนบุคคลที่ต้องจำกัดการเข้าถึงเป็นพิเศษ ----------
+    # ตอบ "ข้อควรคิด" ข้อสุดท้ายของโจทย์ข้อ 8 โดยตรง
+    #
+    # ข้อตกลงของระบบนี้:
+    #   1. ห้ามใส่ national_id ลงใน response schema ใด ๆ  ใช้ national_id_masked แทน
+    #   2. ห้ามเขียนเลขเต็มลง AuditLog หรือ log ไฟล์
+    #   3. unique เพื่อกันสมัครซ้ำด้วยเลขเดียวกัน
+    #
+    # ระบบที่ใช้งานจริงต้องเข้ารหัสคอลัมน์นี้ (เช่น pgcrypto) และแยกสิทธิ์อ่าน
+    # ต้นแบบนี้ยังเก็บเป็นข้อความธรรมดาเพราะ key management อยู่นอกขอบเขตการสาธิต
+    # และข้อมูลทั้งหมดเป็นข้อมูลจำลองตามกติกาข้อ 14
+    national_id: Mapped[str | None] = mapped_column(String(13), unique=True)
+    birth_date: Mapped[date | None] = mapped_column(Date)
+
     role: Mapped[str] = mapped_column(String(20), server_default=UserRole.OPERATOR, nullable=False)
 
     # M1 "กลไกยืนยันตัวตนเพื่อแยกผู้ใช้จริงออกจากบัญชีขยะ"
@@ -45,6 +65,15 @@ class User(Base, TimestampMixin):
     pseudonym_code: Mapped[str | None] = mapped_column(String(16), unique=True)
 
     assignments: Mapped[list[OfficerAssignment]] = relationship(back_populates="officer")
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}".strip()
+
+    @property
+    def national_id_masked(self) -> str | None:
+        """เลขบัตรแบบปิดบัง — ใช้ค่านี้ทุกครั้งที่ต้องแสดงผลหรือส่งออก API"""
+        return mask_national_id(self.national_id) if self.national_id else None
 
 
 class OfficerAssignment(Base, TimestampMixin):

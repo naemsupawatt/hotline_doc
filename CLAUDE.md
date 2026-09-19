@@ -77,12 +77,24 @@ brand asset แปลงเป็น WebP แล้ว, enums สถานะท
 - `backend/tests/` 13 เคสครอบ T-01..T-05 + เคสขอบ ผ่านหมด (`uv run pytest`)
 - ER Diagram + คำอธิบาย 3NF อยู่ที่ `docs/database.md` (deliverable ข้อ 2 เสร็จ)
 
-**ยังไม่เริ่ม:** endpoint ทุกตัว (ยังเป็น stub ทั้ง 7 กลุ่ม), service layer ยังว่าง,
-หน้าจอจริงทุกหน้า (มี `page.tsx` หน้าเดียว), seed เอกสาร A01–A08/B01–B07 ยังไม่มี,
-เอกสารส่งมอบข้อ 1/3/5/6
+**M1 เสร็จแล้ว (19 ก.ย. เย็น):**
+- `POST /auth/register` `/verify-otp` `/login` `GET /auth/me` ใช้งานได้จริง ทดสอบครบ
+- หน้า `/login` และ `/register` (สมัคร → ยืนยัน OTP → เข้าระบบ) `/` redirect ไป `/login`
+- หน้าตรวจสอบระบบดีไซน์ย้ายไป `/scaffold`
+- เลขบัตรประชาชน: ตรวจ check digit ทั้งสองฝั่ง เก็บ unique แสดงแบบปิดบังเสมอ
+  **ห้ามเพิ่ม `national_id` ดิบลงใน response schema ใด ๆ**
+- บัญชีสาธิต 4 บทบาท รหัส `demo1234`, OTP โหมดสาธิตคงที่ `123456`
+- เทสต์ backend 33 เคส (`uv run pytest`)
+
+**ยังไม่เริ่ม:** endpoint กลุ่ม wizard/applications/documents/officer/reports/admin
+(ยังเป็น stub), หน้าจอของผู้ประกอบการ/เจ้าหน้าที่/ส่วนกลางทั้งหมด,
+seed เอกสาร A01–A08/B01–B07, เอกสารส่งมอบข้อ 1/3/5/6
 
 **ขั้นถัดไป:** seed `DocumentType` + `DocumentRequirement` (M3/M4 ใช้ตารางนี้ทั้งคู่)
 แล้วทำ service จำแนกประเภท + endpoint wizard ให้ต่อกับ FE ได้
+
+**หนี้ที่ต้องเคลียร์:** หน้าปลายทางหลังล็อกอิน/สมัครยังไม่มี ทั้งสองหน้าจึงหยุดที่
+หน้าจอ "สำเร็จ" แทนการ redirect (`homeFor()` ใน `lib/auth.ts` เตรียมไว้แล้ว)
 
 ## โครงสร้างโค้ด
 

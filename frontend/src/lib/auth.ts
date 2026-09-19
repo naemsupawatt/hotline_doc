@@ -8,6 +8,7 @@ export type AuthUser = {
   phone: string | null;
   role: UserRole;
   is_verified: boolean;
+  national_id_masked: string | null;
 };
 
 type TokenResponse = {
@@ -18,6 +19,43 @@ type TokenResponse = {
 
 const TOKEN_KEY = "hotline.token";
 const USER_KEY = "hotline.user";
+
+export type RegisterInput = {
+  first_name: string;
+  last_name: string;
+  national_id: string;
+  birth_date: string;
+  email: string;
+  password: string;
+};
+
+type RegisterResponse = {
+  email: string;
+  message: string;
+  demo_code: string | null;
+};
+
+/** M1: สมัครสมาชิก — ยังไม่ได้ token ต้องยืนยันตัวตนก่อน */
+export async function register(input: RegisterInput): Promise<RegisterResponse> {
+  return api<RegisterResponse>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** M1: ยืนยันตัวตนด้วยรหัส 6 หลัก แล้วเข้าสู่ระบบให้เลย */
+export async function verifyOtp(
+  email: string,
+  code: string,
+  remember = true,
+): Promise<AuthUser> {
+  const res = await api<TokenResponse>("/auth/verify-otp", {
+    method: "POST",
+    body: JSON.stringify({ email, code }),
+  });
+  saveSession(res, remember);
+  return res.user;
+}
 
 /** M1: เข้าสู่ระบบด้วยอีเมลหรือเบอร์โทร */
 export async function login(

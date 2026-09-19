@@ -10,14 +10,19 @@ type Props = Omit<React.InputHTMLAttributes<HTMLInputElement>, "id"> & {
   icon?: LucideIcon;
   /** ข้อความผิดพลาดที่ผู้ใช้ทั่วไปเข้าใจ — NFR Usability */
   error?: string;
+  /** คำอธิบายใต้ช่อง — ทุกช่องควรมี ไม่ปล่อย label ลอย (decisions.md ข้อ 7) */
+  hint?: string;
   /** แสดงปุ่มลูกตาเปิด/ปิดการมองเห็นรหัสผ่าน */
   revealable?: boolean;
+  /** React 19 ส่ง ref เป็น prop ปกติ — react-hook-form ต้องใช้ช่องนี้ */
+  ref?: React.Ref<HTMLInputElement>;
 };
 
 export function TextField({
   label,
   icon: Icon,
   error,
+  hint,
   revealable,
   className,
   type = "text",
@@ -25,6 +30,7 @@ export function TextField({
 }: Props) {
   const id = useId();
   const errorId = `${id}-error`;
+  const hintId = `${id}-hint`;
   const [revealed, setRevealed] = useState(false);
   const inputType = revealable ? (revealed ? "text" : "password") : type;
 
@@ -47,7 +53,7 @@ export function TextField({
           type={inputType}
           // ต้องมี aria-describedby ไม่งั้น screen reader อ่านข้อความผิดพลาดไม่เจอ
           aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
+          aria-describedby={error ? errorId : hint ? hintId : undefined}
           className={cn(
             "min-h-12 w-full rounded-xl border bg-canvas py-3 text-base text-ink",
             "placeholder:text-ink-muted/70",
@@ -75,6 +81,10 @@ export function TextField({
       {error ? (
         <p id={errorId} className="text-sm font-medium text-danger-fg">
           {error}
+        </p>
+      ) : hint ? (
+        <p id={hintId} className="text-sm text-ink-muted">
+          {hint}
         </p>
       ) : null}
     </div>
