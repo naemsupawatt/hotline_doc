@@ -35,16 +35,43 @@ function readDetail(body: unknown): string {
   return fallback;
 }
 
+/**
+ * ยิงไม่ถึงเซิร์ฟเวอร์เลย — ต่างจาก "เซิร์ฟเวอร์ตอบว่าผิดพลาด"
+ *
+ * เคสนี้เจอบ่อยสองแบบ และเดิมทั้งคู่ขึ้นข้อความว่า "ตรวจสอบอินเทอร์เน็ต"
+ * ซึ่งพาไปหาสาเหตุผิดทาง:
+ *   1. ลืมเปิด backend ตอนพัฒนา
+ *   2. เว็บถูก deploy ขึ้นโฮสต์ แต่ NEXT_PUBLIC_API_URL ยังชี้ localhost
+ *
+ * ผู้ใช้ทั่วไปเห็นข้อความกลาง ๆ ตาม NFR Usability
+ * ส่วนคนพัฒนาเห็น URL ที่ยิงไปต่อท้าย เฉพาะตอนไม่ใช่ production
+ */
+const UNREACHABLE = 0;
+
+function unreachableMessage(url: string): string {
+  const base = "ขณะนี้ติดต่อระบบไม่ได้ กรุณาลองใหม่อีกครั้งในอีกสักครู่";
+  if (process.env.NODE_ENV === "production") return base;
+  return `${base} (ยิงไปที่ ${url} แล้วไม่มีการตอบกลับ — เซิร์ฟเวอร์ API เปิดอยู่หรือไม่)`;
+}
+
 export async function api<T>(path: string, init?: RequestInit & { token?: string }): Promise<T> {
   const { token, headers, ...rest } = init ?? {};
-  const res = await fetch(`${BASE}${path}`, {
-    ...rest,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
-    },
-  });
+  const url = `${BASE}${path}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...rest,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
+    });
+  } catch {
+    // fetch โยน TypeError เมื่อยิงไม่ถึงปลายทาง รวมถึงกรณีถูก CORS บล็อก
+    throw new ApiError(unreachableMessage(url), UNREACHABLE);
+  }
 
   if (!res.ok) {
     // NFR Usability: ต้องแสดงข้อความที่ผู้ใช้ทั่วไปเข้าใจ ไม่ใช่ raw error code

@@ -114,7 +114,14 @@ def payload(karon_id: int, **overrides) -> dict:
         "has_restaurant": False,
         "local_authority_id": karon_id,
         "property_name": "บ้านพักทดสอบ",
-        "address": "99/9 หมู่ 1 ตำบลกะรน อำเภอเมืองภูเก็ต",
+        "address": {
+            "address_no": "99/9",
+            "moo": "1",
+            "road": "กะรน",
+            "sub_district": "กะรน",
+            "district": "เมืองภูเก็ต",
+            "postal_code": "83100",
+        },
         "accommodation_kind": "detached_house",
     }
     return base | overrides
@@ -124,6 +131,69 @@ def start(client, token, karon_id, **overrides):
     return client.post(
         "/api/v1/applications", json=payload(karon_id, **overrides), headers=auth(token)
     )
+
+
+def test_address_is_stored_as_separate_fields(client, owner, karon_id):
+    """ที่อยู่ต้องแยกช่อง เพราะแบบหนังสือแจ้งฯ มีช่องแยก และ M11 ต้องสรุปรายอำเภอ"""
+    body = start(client, owner, karon_id).json()
+    address = body["property"]["address"]
+
+    assert address["address_no"] == "99/9"
+    assert address["moo"] == "1"
+    assert address["sub_district"] == "กะรน"
+    assert address["district"] == "เมืองภูเก็ต"
+    assert address["postal_code"] == "83100"
+    # จังหวัดเซิร์ฟเวอร์เติมให้ ไม่ได้รับมาจาก client
+    assert address["province"] == "ภูเก็ต"
+
+
+def test_full_address_is_composed_not_stored_twice(client, owner, karon_id):
+    """ที่อยู่บรรทัดเดียวประกอบจากช่องย่อย ไม่เก็บซ้ำอีกคอลัมน์ (3NF)"""
+    address = start(client, owner, karon_id).json()["property"]["address"]
+    full = address["full_address"]
+
+    for part in ["99/9", "หมู่ 1", "ถนนกะรน", "ตำบลกะรน", "อำเภอเมืองภูเก็ต", "จังหวัดภูเก็ต", "83100"]:
+        assert part in full, f"ขาด {part} ใน {full}"
+
+
+def test_optional_address_parts_may_be_omitted(client, owner, karon_id):
+    """ที่พักในเขตเทศบาลนครไม่มีหมู่ ไม่ควรถูกบังคับให้กรอก"""
+    body = start(
+        client,
+        owner,
+        karon_id,
+        address={
+            "address_no": "12",
+            "sub_district": "ตลาดใหญ่",
+            "district": "เมืองภูเก็ต",
+            "postal_code": "83000",
+        },
+    ).json()
+    address = body["property"]["address"]
+
+    assert address["moo"] is None and address["soi"] is None and address["road"] is None
+    assert "หมู่" not in address["full_address"]
+
+
+@pytest.mark.parametrize(
+    "bad,reason",
+    [
+        ({"address_no": ""}, "บ้านเลขที่ว่าง"),
+        ({"sub_district": ""}, "ตำบลว่าง"),
+        ({"district": ""}, "อำเภอว่าง"),
+        ({"postal_code": "831"}, "รหัสไปรษณีย์สั้นไป"),
+        ({"postal_code": "8310a"}, "รหัสไปรษณีย์ไม่ใช่ตัวเลข"),
+    ],
+)
+def test_rejects_incomplete_address(client, owner, karon_id, bad, reason):
+    full = {
+        "address_no": "99/9",
+        "sub_district": "กะรน",
+        "district": "เมืองภูเก็ต",
+        "postal_code": "83100",
+    }
+    res = start(client, owner, karon_id, address=full | bad)
+    assert res.status_code == 422, reason
 
 
 def test_starting_an_application_issues_a_reference_number(client, owner, karon_id):

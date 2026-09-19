@@ -24,11 +24,26 @@ from app.models.classification import ApplicationClassification
 from app.models.enums import ApplicationStatus
 from app.models.property import Operator, Property
 from app.models.user import User
+from app.schemas.application import DEFAULT_PROVINCE
 from app.services import classification as classify_svc
+from app.services import document as document_svc
 
 # ปีพุทธศักราชในเลขที่คำขอ — ผู้ใช้ไทยอ่าน "2569" เข้าใจกว่า "2026"
 BUDDHIST_OFFSET = 543
 APPLICATION_NO_PREFIX = "PKT"
+
+
+@dataclass(frozen=True)
+class Address:
+    """ที่อยู่แยกช่องตามแบบหนังสือแจ้งฯ — จังหวัดเติมโดยเซิร์ฟเวอร์"""
+
+    address_no: str
+    sub_district: str
+    district: str
+    postal_code: str
+    moo: str | None = None
+    soi: str | None = None
+    road: str | None = None
 
 
 @dataclass(frozen=True)
@@ -40,7 +55,7 @@ class PropertyDetails:
     """
 
     name: str
-    address: str
+    address: Address
     accommodation_kind: str
     accommodation_kind_other: str | None = None
     latitude: float | None = None
@@ -113,7 +128,14 @@ def start(
         operator_id=operator.id,
         local_authority_id=local_authority_id,
         name=details.name,
-        address=details.address,
+        address_no=details.address.address_no,
+        moo=details.address.moo,
+        soi=details.address.soi,
+        road=details.address.road,
+        sub_district=details.address.sub_district,
+        district=details.address.district,
+        province=DEFAULT_PROVINCE,
+        postal_code=details.address.postal_code,
         room_count=answers.rooms,
         max_guests=answers.guests,
         has_restaurant=answers.has_restaurant,
@@ -176,6 +198,80 @@ def start(
     )
 
     return NewApplication(application, property_obj, outcome), None
+
+
+# สถานะที่ผู้ยื่นยังแก้ไขเอกสารได้
+# ยื่นแล้วต้องล็อก ไม่งั้นเจ้าหน้าที่ตรวจไฟล์หนึ่งอยู่ แล้วไฟล์เปลี่ยนใต้มือ
+EDITABLE_STATUSES = {ApplicationStatus.DRAFT, ApplicationStatus.NEEDS_REVISION}
+
+
+def is_editable(application: Application) -> bool:
+    return application.status in EDITABLE_STATUSES
+
+
+def classification_of(db: Session, application: Application) -> ApplicationClassification:
+    """ผลจำแนกที่บันทึกไว้ตอนเปิดคำขอ — ทุกคำขอมีเสมอ"""
+    snapshot = db.scalar(
+        select(ApplicationClassification).where(
+            ApplicationClassification.application_id == application.id
+        )
+    )
+    if snapshot is None:  # pragma: no cover - สร้างคู่กับคำขอเสมอ
+        raise ValueError(f"คำขอ {application.application_no} ไม่มีผลจำแนก")
+    return snapshot
+
+
+def submit(
+    db: Session,
+    *,
+    application: Application,
+    user: User,
+    ip: str | None = None,
+) -> tuple[bool, str | None, list[document_svc.Missing]]:
+    """ยื่นคำขอ (M6) — คืน (สำเร็จ, ข้อความผิดพลาด, รายการเอกสารที่ขาด)
+
+    T-06 บังคับว่าเมื่อเอกสารบังคับไม่ครบ ต้องไม่ให้ยื่น **และระบุชัดว่าขาดฉบับใด**
+    จึงคืนรายการที่ขาดออกไปด้วย ไม่ใช่แค่บอกว่า "เอกสารไม่ครบ"
+    """
+    if application.status != ApplicationStatus.DRAFT:
+        if application.status == ApplicationStatus.NEEDS_REVISION:
+            pass  # ส่งกลับหลังแก้ไขได้
+        else:
+            return False, "คำขอนี้ถูกยื่นไปแล้ว ไม่ต้องยื่นซ้ำ", []
+
+    snapshot = classification_of(db, application)
+    missing = document_svc.missing_mandatory(db, application, snapshot.property_type_id)
+    if missing:
+        return False, "ยังยื่นไม่ได้เพราะเอกสารบังคับยังไม่ครบ", missing
+
+    previous = application.status
+    application.status = ApplicationStatus.SUBMITTED
+    application.submitted_at = func.now()
+    application.status_changed_at = func.now()
+
+    db.add(
+        ApplicationStatusHistory(
+            application_id=application.id,
+            from_status=previous,
+            to_status=ApplicationStatus.SUBMITTED,
+            changed_by_id=user.id,
+            note="ผู้ยื่นส่งคำขอเข้าสู่การพิจารณา",
+        )
+    )
+    db.add(
+        AuditLog(
+            actor_id=user.id,
+            action="application.submit",
+            entity_type="application",
+            entity_id=application.id,
+            from_status=previous,
+            to_status=ApplicationStatus.SUBMITTED,
+            outcome="success",
+            detail=f"ยื่นคำขอ {application.application_no}",
+            ip_address=ip,
+        )
+    )
+    return True, None, []
 
 
 def by_number(db: Session, application_no: str) -> Application | None:

@@ -20,14 +20,17 @@ from app.models.authority import LocalAuthority
 from app.models.classification import ApplicationClassification
 from app.models.property import Property
 from app.schemas.application import (
+    AddressOut,
     ApplicationOut,
     ApplicationSummaryOut,
+    MissingDocumentOut,
     PropertyOut,
     StartApplicationRequest,
 )
 from app.schemas.wizard import FeeOut
 from app.services import application as app_svc
 from app.services import classification as classify_svc
+from app.services import document as doc_svc
 
 router = APIRouter()
 
@@ -62,7 +65,15 @@ def start_application(
         local_authority_id=payload.local_authority_id,
         details=app_svc.PropertyDetails(
             name=payload.property_name,
-            address=payload.address,
+            address=app_svc.Address(
+                address_no=payload.address.address_no,
+                moo=payload.address.moo,
+                soi=payload.address.soi,
+                road=payload.address.road,
+                sub_district=payload.address.sub_district,
+                district=payload.address.district,
+                postal_code=payload.address.postal_code,
+            ),
             accommodation_kind=payload.accommodation_kind,
             accommodation_kind_other=payload.accommodation_kind_other,
             latitude=payload.latitude,
@@ -112,11 +123,56 @@ def my_applications(db: DbSession, current: CurrentOperator) -> list[Application
 def application_detail(
     application_no: str, db: DbSession, current: CurrentOperator, request: Request
 ) -> ApplicationOut:
+    return _detail(db, _load_owned(db, application_no, current, request))
+
+
+@router.post(
+    "/{application_no}/submit",
+    response_model=ApplicationOut,
+    summary="ยื่นคำขอเข้าสู่การพิจารณา",
+    responses={
+        404: {"description": "ไม่พบคำขอ หรือคำขอนี้ไม่ใช่ของผู้ใช้รายนี้"},
+        422: {"description": "เอกสารบังคับยังไม่ครบ — ระบุรายการที่ขาดใน detail"},
+    },
+)
+def submit_application(
+    application_no: str, db: DbSession, current: CurrentOperator, request: Request
+) -> ApplicationOut:
+    application = _load_owned(db, application_no, current, request)
+
+    ok, error, missing = app_svc.submit(
+        db,
+        application=application,
+        user=current,
+        ip=request.client.host if request.client else None,
+    )
+
+    if not ok:
+        db.rollback()
+        # T-06: ต้องบอกให้ชัดว่าขาดฉบับใดบ้าง ไม่ใช่แค่ "เอกสารไม่ครบ"
+        listed = ", ".join(f"{m.code} {m.name_th}" for m in missing)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{error} ขาด {len(missing)} ฉบับ: {listed}" if missing else error,
+        )
+
+    db.commit()
+    db.refresh(application)
+    return _detail(db, application)
+
+
+# ---------------------------------------------------------------- ตัวช่วยภายใน
+
+
+def _load_owned(db: DbSession, application_no: str, current, request: Request) -> Application:
+    """คำขอของผู้ใช้รายนี้เท่านั้น
+
+    ตอบ 404 ไม่ใช่ 403 เพราะ 403 เท่ากับยืนยันว่าเลขที่คำขอนี้มีอยู่จริง
+    และบันทึกความพยายามลง AuditLog — ฝาแฝดของ T-09 ฝั่งผู้ยื่น
+    """
     application = app_svc.by_number(db, application_no)
 
     if application is not None and not app_svc.is_owner(db, application, current):
-        # บันทึกความพยายามเข้าถึงคำขอของคนอื่น แล้วตอบ 404 ไม่ใช่ 403
-        # เพราะ 403 เท่ากับยืนยันว่าเลขที่คำขอนี้มีอยู่จริง
         db.add(
             AuditLog(
                 actor_id=current.id,
@@ -136,11 +192,7 @@ def application_detail(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="ไม่พบคำขอหมายเลขนี้ในบัญชีของคุณ กรุณาตรวจสอบเลขที่คำขออีกครั้ง",
         )
-
-    return _detail(db, application)
-
-
-# ---------------------------------------------------------------- ตัวช่วยภายใน
+    return application
 
 
 def _classification(db: DbSession, application: Application) -> ApplicationClassification | None:
@@ -169,6 +221,9 @@ def _detail(db: DbSession, application: Application) -> ApplicationOut:
     )
     fee = classify_svc.current_fee(db, ptype.id) if ptype.requires_license else None
 
+    files = doc_svc.current_files(db, application.id)
+    missing = doc_svc.missing_mandatory(db, application, ptype.id)
+
     return ApplicationOut(
         application_no=application.application_no,
         status=application.status,
@@ -185,7 +240,17 @@ def _detail(db: DbSession, application: Application) -> ApplicationOut:
         fee=FeeOut(**vars(fee)) if fee else None,
         property=PropertyOut(
             name=prop.name,
-            address=prop.address,
+            address=AddressOut(
+                address_no=prop.address_no,
+                moo=prop.moo,
+                soi=prop.soi,
+                road=prop.road,
+                sub_district=prop.sub_district,
+                district=prop.district,
+                postal_code=prop.postal_code,
+                province=prop.province,
+                full_address=prop.full_address,
+            ),
             room_count=prop.room_count,
             max_guests=prop.max_guests,
             has_restaurant=prop.has_restaurant,
@@ -193,5 +258,9 @@ def _detail(db: DbSession, application: Application) -> ApplicationOut:
             accommodation_kind_other=prop.accommodation_kind_other,
             local_authority_name=authority.name if authority else "-",
         ),
-        documents=presenters.to_checklist(docs, local_authority_id=application.local_authority_id),
+        documents=presenters.to_checklist(
+            docs, local_authority_id=application.local_authority_id, files=files
+        ),
+        can_submit=not missing and app_svc.is_editable(application),
+        missing_documents=[MissingDocumentOut(code=m.code, name_th=m.name_th) for m in missing],
     )

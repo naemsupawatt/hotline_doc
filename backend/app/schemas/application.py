@@ -11,6 +11,40 @@ from pydantic import BaseModel, Field
 from app.models.enums import AccommodationKind
 from app.schemas.wizard import DocumentChecklistOut, FeeOut
 
+# ระบบนี้รับเฉพาะจังหวัดภูเก็ตตามขอบเขตของโจทย์
+# เก็บค่าไว้ที่เดียวตรงนี้ ไม่กระจายเป็น literal ตามไฟล์ต่าง ๆ
+DEFAULT_PROVINCE = "ภูเก็ต"
+
+POSTAL_CODE_PATTERN = r"^\d{5}$"
+
+
+class AddressIn(BaseModel):
+    """ที่อยู่แยกช่องตามแบบหนังสือแจ้งสถานที่พักที่ไม่เป็นโรงแรม
+
+    ไม่รับ "จังหวัด" จาก client — เซิร์ฟเวอร์เติมให้เป็นภูเก็ตเสมอ
+    เพราะเป็นขอบเขตของระบบ ไม่ใช่สิ่งที่ผู้ใช้เลือกได้
+    """
+
+    address_no: str = Field(min_length=1, max_length=40, examples=["99/9"], description="บ้านเลขที่")
+    moo: str | None = Field(default=None, max_length=20, examples=["1"], description="หมู่ที่")
+    soi: str | None = Field(default=None, max_length=80, examples=[None], description="ซอย")
+    road: str | None = Field(
+        default=None, max_length=80, examples=["กะรน"], description="ถนน (ไม่ต้องใส่คำว่า ถนน)"
+    )
+    sub_district: str = Field(min_length=1, max_length=80, examples=["กะรน"], description="ตำบล")
+    district: str = Field(min_length=1, max_length=80, examples=["เมืองภูเก็ต"], description="อำเภอ")
+    postal_code: str = Field(
+        pattern=POSTAL_CODE_PATTERN, examples=["83100"], description="รหัสไปรษณีย์ 5 หลัก"
+    )
+
+
+class AddressOut(AddressIn):
+    province: str = Field(examples=[DEFAULT_PROVINCE])
+    full_address: str = Field(
+        examples=["99/9 หมู่ 1 ถนนกะรน ตำบลกะรน อำเภอเมืองภูเก็ต จังหวัดภูเก็ต 83100"],
+        description="ที่อยู่บรรทัดเดียว ประกอบจากช่องย่อย ไม่ได้เก็บซ้ำในฐานข้อมูล",
+    )
+
 
 class StartApplicationRequest(BaseModel):
     """คำตอบจาก wizard + ข้อมูลที่พักที่ต้องมีก่อนเปิดคำขอ
@@ -25,9 +59,7 @@ class StartApplicationRequest(BaseModel):
     local_authority_id: int = Field(examples=[5], description="อปท. ที่ที่พักตั้งอยู่ — บังคับตอนเปิดคำขอ")
 
     property_name: str = Field(min_length=1, max_length=200, examples=["บ้านพักริมเลกะรน"])
-    address: str = Field(
-        min_length=1, examples=["99/9 หมู่ 1 ถนนกะรน ตำบลกะรน อำเภอเมืองภูเก็ต จังหวัดภูเก็ต 83100"]
-    )
+    address: AddressIn
     accommodation_kind: AccommodationKind = Field(
         examples=[AccommodationKind.DETACHED_HOUSE],
         description="ลักษณะที่พักตามแบบหนังสือแจ้งฯ",
@@ -45,7 +77,7 @@ class StartApplicationRequest(BaseModel):
 
 class PropertyOut(BaseModel):
     name: str = Field(examples=["บ้านพักริมเลกะรน"])
-    address: str = Field(examples=["99/9 หมู่ 1 ถนนกะรน ..."])
+    address: AddressOut
     room_count: int = Field(examples=[6])
     max_guests: int = Field(examples=[24])
     has_restaurant: bool = Field(examples=[False])
@@ -54,6 +86,13 @@ class PropertyOut(BaseModel):
     local_authority_name: str = Field(examples=["เทศบาลตำบลกะรน"])
 
     model_config = {"from_attributes": True}
+
+
+class MissingDocumentOut(BaseModel):
+    """เอกสารบังคับที่ยังขาด — T-06 บังคับให้ระบุชัดว่าขาดฉบับใด"""
+
+    code: str = Field(examples=["A02"])
+    name_th: str = Field(examples=["สำเนาทะเบียนบ้านผู้แจ้ง"])
 
 
 class ApplicationOut(BaseModel):
@@ -76,6 +115,11 @@ class ApplicationOut(BaseModel):
     fee: FeeOut | None = None
     property: PropertyOut
     documents: DocumentChecklistOut
+
+    # M6: หน้าจอใช้สองค่านี้ตัดสินว่าจะเปิดปุ่ม "ยื่นคำขอ" หรือไม่
+    # และถ้ายังยื่นไม่ได้ ต้องบอกให้ครบว่าขาดอะไร ไม่ใช่แค่ทำปุ่มเป็นสีเทา
+    can_submit: bool = Field(examples=[False])
+    missing_documents: list[MissingDocumentOut] = Field(default_factory=list)
 
 
 class ApplicationSummaryOut(BaseModel):

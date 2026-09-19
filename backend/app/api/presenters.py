@@ -5,8 +5,14 @@
 สองที่นี้จะค่อย ๆ เพี้ยนจากกัน แล้วหน้าจอที่ใช้ทั้งสองจะพังแบบหาสาเหตุยาก
 """
 
-from app.models.enums import DocumentCategory
-from app.schemas.wizard import ContactPointOut, DocumentChecklistOut, DocumentOut
+from app.models.document import DocumentFile
+from app.models.enums import DocumentCategory, DocumentStatus
+from app.schemas.wizard import (
+    ContactPointOut,
+    DocumentChecklistOut,
+    DocumentOut,
+    UploadedFileOut,
+)
 from app.services import classification as svc
 
 
@@ -27,9 +33,40 @@ def to_contact_out(item: svc.RequiredDocument) -> ContactPointOut | None:
     )
 
 
-def to_document_out(item: svc.RequiredDocument) -> DocumentOut:
+def to_file_out(row: DocumentFile) -> UploadedFileOut:
+    return UploadedFileOut(
+        id=row.id,
+        slot_no=row.slot_no,
+        version_no=row.version_no,
+        original_name=row.original_name,
+        size_bytes=row.size_bytes,
+        mime_type=row.mime_type,
+        uploaded_at=row.created_at,
+    )
+
+
+def _status_of(doc, files: list[DocumentFile]) -> str:
+    """สถานะรายฉบับที่หน้าจอเอาไปแปลงเป็นสี
+
+    แบบฟอร์มที่กรอกในระบบถือว่าพร้อมตั้งแต่เปิดคำขอ เพราะข้อมูลที่ใช้
+    ถูกกรอกครบไปแล้ว ไม่มีไฟล์ให้แนบ จึงไม่ควรค้างเป็น "ยังไม่ได้อัปโหลด"
+    """
+    if doc.is_system_form:
+        return DocumentStatus.UPLOADED
+    if not files:
+        return DocumentStatus.NOT_UPLOADED
+    # ทุกไฟล์ของเอกสารฉบับเดียวกันใช้สถานะเดียวกัน ใช้ของไฟล์แรกเป็นตัวแทน
+    return files[0].status
+
+
+def to_document_out(
+    item: svc.RequiredDocument, files: list[DocumentFile] | None = None
+) -> DocumentOut:
     doc = item.document_type
+    attached = files or []
     return DocumentOut(
+        status=_status_of(doc, attached),
+        files=[to_file_out(f) for f in attached],
         code=doc.code,
         name_th=doc.name_th,
         description=doc.description,
@@ -44,7 +81,10 @@ def to_document_out(item: svc.RequiredDocument) -> DocumentOut:
 
 
 def to_checklist(
-    items: list[svc.RequiredDocument], *, local_authority_id: int | None
+    items: list[svc.RequiredDocument],
+    *,
+    local_authority_id: int | None,
+    files: list[DocumentFile] | None = None,
 ) -> DocumentChecklistOut:
     """แยก 2 หมวดตาม M3 ให้เสร็จตั้งแต่ชั้น API
 
@@ -53,13 +93,17 @@ def to_checklist(
     self_service: list[DocumentOut] = []
     external: list[DocumentOut] = []
 
+    by_type: dict[int, list[DocumentFile]] = {}
+    for row in files or []:
+        by_type.setdefault(row.document_type_id, []).append(row)
+
     for item in items:
         bucket = (
             external
             if DocumentCategory(item.document_type.category) is DocumentCategory.EXTERNAL
             else self_service
         )
-        bucket.append(to_document_out(item))
+        bucket.append(to_document_out(item, by_type.get(item.document_type.id)))
 
     return DocumentChecklistOut(
         self_service=self_service,

@@ -12,7 +12,10 @@ import {
   RotateCcw,
   Upload,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { Mascot } from "@/components/brand/Mascot";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -21,6 +24,13 @@ import { Stepper } from "@/components/common/Stepper";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { ApiError } from "@/lib/api";
+import {
+  ACCOMMODATION_KINDS,
+  type AccommodationKind,
+  type AddressInput,
+  startApplication,
+} from "@/lib/applications";
+import { getUser } from "@/lib/auth";
 import {
   type ClassifyResult,
   type LocalAuthority,
@@ -32,12 +42,40 @@ import {
 
 const STEPS = [{ label: "ข้อมูลที่พัก" }, { label: "บริการ" }, { label: "ผลประเมิน" }];
 
+/** คำตอบทั้งหมดของ wizard เก็บไว้ที่ตัวหน้า เพราะขั้น "เริ่มยื่นคำขอ" ต้องใช้ค่าชุดเดียวกัน
+    ส่งซ้ำไปให้เซิร์ฟเวอร์จำแนกใหม่ ไม่ได้ส่งผลจำแนกที่ได้มาแล้วกลับไป */
+export type Answers = {
+  rooms: string;
+  guests: string;
+  hasRestaurant: boolean;
+  authorityId: string;
+};
+
+const EMPTY: Answers = { rooms: "", guests: "", hasRestaurant: false, authorityId: "" };
+
+const EMPTY_ADDRESS: AddressInput = {
+  address_no: "",
+  moo: "",
+  soi: "",
+  road: "",
+  sub_district: "",
+  district: "",
+  postal_code: "",
+};
+
 export function WizardView() {
   const [result, setResult] = useState<ClassifyResult | null>(null);
-  const [answers, setAnswers] = useState<{ rooms: string; guests: string }>({
-    rooms: "",
-    guests: "",
-  });
+  const [answers, setAnswers] = useState<Answers>(EMPTY);
+  const [authorities, setAuthorities] = useState<LocalAuthority[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // อปท. 19 แห่งมาจากฐานข้อมูล ไม่ได้เขียนตายตัวไว้ในหน้าเว็บ (ข้อ 4 ของโจทย์)
+  // ดึงที่ตัวหน้าเพราะใช้สองที่: ช่องเลือกพื้นที่ และรายการอำเภอในฟอร์มที่อยู่
+  useEffect(() => {
+    listLocalAuthorities()
+      .then(setAuthorities)
+      .catch(() => setLoadError("โหลดรายชื่อหน่วยงานท้องถิ่นไม่ได้ กรุณารีเฟรชหน้าอีกครั้ง"));
+  }, []);
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
@@ -55,11 +93,16 @@ export function WizardView() {
           onAnswersChange={setAnswers}
           onResult={setResult}
           onReset={() => setResult(null)}
+          authorities={authorities}
+          loadError={loadError}
         />
         <ResultPanel result={result} />
       </div>
 
       {result && <DocumentChecklist result={result} />}
+      {result && (
+        <StartApplicationSection answers={answers} result={result} authorities={authorities} />
+      )}
     </main>
   );
 }
@@ -67,25 +110,30 @@ export function WizardView() {
 /* ------------------------------------------------------------------ ฟอร์ม */
 
 type FormProps = {
-  answers: { rooms: string; guests: string };
-  onAnswersChange: (a: { rooms: string; guests: string }) => void;
+  answers: Answers;
+  onAnswersChange: (a: Answers) => void;
   onResult: (r: ClassifyResult) => void;
   onReset: () => void;
+  authorities: LocalAuthority[];
+  loadError: string | null;
 };
 
-function AssessmentForm({ answers, onAnswersChange, onResult, onReset }: FormProps) {
-  const [hasRestaurant, setHasRestaurant] = useState(false);
-  const [authorityId, setAuthorityId] = useState<string>("");
-  const [authorities, setAuthorities] = useState<LocalAuthority[]>([]);
-  const [error, setError] = useState<string | null>(null);
+function AssessmentForm({
+  answers,
+  onAnswersChange,
+  onResult,
+  onReset,
+  authorities,
+  loadError,
+}: FormProps) {
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-
-  // อปท. 19 แห่งมาจากฐานข้อมูล ไม่ได้เขียนตายตัวไว้ในหน้าเว็บ (ข้อ 4 ของโจทย์)
-  useEffect(() => {
-    listLocalAuthorities()
-      .then(setAuthorities)
-      .catch(() => setError("โหลดรายชื่อหน่วยงานท้องถิ่นไม่ได้ กรุณารีเฟรชหน้าอีกครั้ง"));
-  }, []);
+  const error = submitError ?? loadError;
+  const setError = setSubmitError;
+  const hasRestaurant = answers.hasRestaurant;
+  const authorityId = answers.authorityId;
+  const setHasRestaurant = (v: boolean) => onAnswersChange({ ...answers, hasRestaurant: v });
+  const setAuthorityId = (v: string) => onAnswersChange({ ...answers, authorityId: v });
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -455,5 +503,339 @@ function ContactBlock({ contact, note }: { contact: RequiredDocument["contact_po
         )}
       </dl>
     </div>
+  );
+}
+
+
+/* --------------------------------------------------------- เริ่มยื่นคำขอ (M6) */
+
+/**
+ * เข้าสู่ระบบอยู่หรือไม่ — อ่านจาก storage ซึ่งเป็น external store ของฝั่งเบราว์เซอร์
+ *
+ * ใช้ useSyncExternalStore แทน useEffect + setState เพราะ:
+ *   - ฝั่งเซิร์ฟเวอร์ไม่มี storage จึงต้องมี snapshot แยก (คืน false) กัน hydration พัง
+ *   - ถ้าผู้ใช้ล็อกอิน/ออกจากระบบในแท็บอื่น หน้านี้อัปเดตตามทันที
+ */
+function subscribeToAuth(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  return () => window.removeEventListener("storage", onChange);
+}
+
+function useSignedIn(): boolean {
+  return useSyncExternalStore(
+    subscribeToAuth,
+    () => getUser() !== null,
+    () => false,
+  );
+}
+
+/**
+ * ขั้นสุดท้ายของ wizard: เก็บข้อมูลที่พักที่ยังไม่ได้ถาม แล้วเปิดคำขอ
+ *
+ * สามช่องนี้ (ชื่อสถานที่ ที่อยู่ ลักษณะที่พัก) คือช่องในแบบหนังสือแจ้งฯ (A01)
+ * เก็บตั้งแต่ตอนเปิดคำขอ เพื่อให้ระบบสร้างแบบฟอร์มนั้นให้ได้เลยโดยไม่ต้องถามซ้ำ
+ */
+function StartApplicationSection({
+  answers,
+  result,
+  authorities,
+}: {
+  answers: Answers;
+  result: ClassifyResult;
+  authorities: LocalAuthority[];
+}) {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [address, setAddress] = useState<AddressInput>(EMPTY_ADDRESS);
+  const [kind, setKind] = useState<AccommodationKind>("detached_house");
+  const [kindOther, setKindOther] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const signedIn = useSignedIn();
+
+  // รายชื่ออำเภอมาจากข้อมูล อปท. ในฐานข้อมูล ไม่ได้พิมพ์ไว้ในหน้าเว็บ
+  // ตัด "ทั้งจังหวัด" ของ อบจ. ออก เพราะไม่ใช่ชื่ออำเภอจริง
+  const districts = [...new Set(authorities.map((a) => a.district))]
+    .filter((d) => d !== "ทั้งจังหวัด")
+    .sort((a, b) => a.localeCompare(b, "th"));
+
+  // เติมอำเภอให้ล่วงหน้าจาก อปท. ที่เลือกไว้ ผู้ใช้แก้เองได้
+  // (ที่พักใต้ อบจ. ซึ่งครอบทั้งจังหวัด จะไม่ถูกเติมให้ ต้องเลือกเอง)
+  //
+  // คำนวณตอน render ไม่ sync ลง state ด้วย useEffect เพราะค่านี้เป็นค่าที่
+  // "ได้จากข้อมูลอื่น" อยู่แล้ว การเก็บซ้ำลง state จะทำให้ต้องคอยไล่ให้ตรงกัน
+  const selectedAuthority = authorities.find((a) => String(a.id) === answers.authorityId);
+  const suggestedDistrict =
+    selectedAuthority && selectedAuthority.district !== "ทั้งจังหวัด"
+      ? selectedAuthority.district
+      : "";
+
+  // ค่าที่ผู้ใช้เลือกเองมาก่อนเสมอ ถ้ายังไม่เลือกจึงใช้ค่าที่เดาให้
+  const effectiveAddress: AddressInput = {
+    ...address,
+    district: address.district || suggestedDistrict,
+  };
+
+  // เกินขอบเขตของระบบ: เซิร์ฟเวอร์ไม่เปิดคำขอให้อยู่แล้ว จึงไม่ต้องขึ้นฟอร์มให้เสียเวลากรอก
+  if (result.is_out_of_scope) return null;
+
+  if (!signedIn) {
+    return (
+      <SectionCard
+        icon={FileText}
+        tone="brand"
+        title="เริ่มยื่นคำขอ"
+        description="เข้าสู่ระบบก่อน เพื่อให้ระบบเก็บคำขอและเอกสารของคุณไว้ติดตามได้"
+        className="mt-8"
+      >
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href="/login"
+            className="inline-flex min-h-12 items-center justify-center rounded-xl bg-brand-500 px-5 py-3 font-semibold text-white hover:bg-brand-400"
+          >
+            เข้าสู่ระบบ
+          </Link>
+          <Link
+            href="/register"
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border-2 border-brand-500 bg-surface px-5 py-3 font-semibold text-brand-600 hover:bg-brand-50"
+          >
+            สมัครสมาชิก
+          </Link>
+        </div>
+        <p className="mt-3 text-sm text-ink-muted">
+          ผลประเมินด้านบนดูได้โดยไม่ต้องเข้าสู่ระบบ ส่วนการยื่นคำขอต้องระบุตัวตนผู้ยื่น
+        </p>
+      </SectionCard>
+    );
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (!name.trim()) return setError("กรุณากรอกชื่อสถานที่");
+    if (!effectiveAddress.address_no.trim()) return setError("กรุณากรอกบ้านเลขที่");
+    if (!effectiveAddress.sub_district.trim()) return setError("กรุณากรอกตำบล");
+    if (!effectiveAddress.district.trim()) return setError("กรุณาเลือกอำเภอ");
+    if (!/^\d{5}$/.test(effectiveAddress.postal_code)) {
+      return setError("รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก");
+    }
+    if (kind === "other" && !kindOther.trim()) {
+      return setError('เลือกลักษณะที่พักเป็น "อื่น ๆ" กรุณาระบุเพิ่มเติมด้วย');
+    }
+    if (!answers.authorityId) {
+      return setError("กรุณาเลือกพื้นที่ตั้งสถานประกอบการด้านบนก่อนเริ่มยื่นคำขอ");
+    }
+
+    setPending(true);
+    try {
+      const created = await startApplication({
+        rooms: Number(answers.rooms),
+        guests: Number(answers.guests),
+        has_restaurant: answers.hasRestaurant,
+        local_authority_id: Number(answers.authorityId),
+        property_name: name.trim(),
+        address: {
+          address_no: effectiveAddress.address_no.trim(),
+          moo: effectiveAddress.moo?.trim() || null,
+          soi: effectiveAddress.soi?.trim() || null,
+          road: effectiveAddress.road?.trim() || null,
+          sub_district: effectiveAddress.sub_district.trim(),
+          district: effectiveAddress.district.trim(),
+          postal_code: effectiveAddress.postal_code,
+        },
+        accommodation_kind: kind,
+        accommodation_kind_other: kind === "other" ? kindOther.trim() : null,
+      });
+      router.push(`/operator/applications/${created.application_no}`);
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "เปิดคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+      );
+      setPending(false);
+    }
+  }
+
+  return (
+    <SectionCard
+      icon={FileText}
+      tone="brand"
+      title="เริ่มยื่นคำขอ"
+      description="กรอกข้อมูลสถานที่อีกเล็กน้อย ระบบจะออกเลขที่คำขอให้ใช้อ้างอิง"
+      className="mt-8"
+    >
+      <form onSubmit={onSubmit} noValidate className="space-y-5">
+        <TextField
+          label="ชื่อสถานที่"
+          icon={Building2}
+          placeholder="บ้านพักริมเลกะรน"
+          hint="ชื่อที่ใช้เรียกที่พักของคุณ ใช้ในแบบหนังสือแจ้งฯ"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+
+        <AddressFields value={effectiveAddress} onChange={setAddress} districts={districts} />
+
+        <fieldset>
+          <legend className="text-sm font-semibold text-ink">ลักษณะที่พัก</legend>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            {ACCOMMODATION_KINDS.map((option) => (
+              <label
+                key={option.value}
+                className={[
+                  "flex cursor-pointer items-center gap-3 rounded-xl border-2 p-3 transition-colors",
+                  kind === option.value
+                    ? "border-brand-500 bg-brand-50/60"
+                    : "border-line bg-surface hover:border-brand-200",
+                ].join(" ")}
+              >
+                <input
+                  type="radio"
+                  name="accommodation_kind"
+                  checked={kind === option.value}
+                  onChange={() => setKind(option.value)}
+                  className="size-5 shrink-0 accent-brand-500"
+                />
+                <span className="font-medium text-ink">{option.label}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        {kind === "other" && (
+          <TextField
+            label="ระบุลักษณะที่พัก"
+            placeholder="เช่น อาคารพาณิชย์ดัดแปลง"
+            value={kindOther}
+            onChange={(e) => setKindOther(e.target.value)}
+          />
+        )}
+
+        {error && (
+          <p
+            role="alert"
+            className="rounded-xl bg-danger-bg px-4 py-3 text-sm font-medium text-danger-fg"
+          >
+            {error}
+          </p>
+        )}
+
+        <Button type="submit" disabled={pending}>
+          {pending ? "กำลังเปิดคำขอ…" : "เริ่มยื่นคำขอ"}
+          {pending ? null : <ArrowRight className="size-5" aria-hidden />}
+        </Button>
+      </form>
+    </SectionCard>
+  );
+}
+
+
+/* ------------------------------------------------------------- ที่อยู่แยกช่อง */
+
+/**
+ * ช่องที่อยู่ตามแบบหนังสือแจ้งฯ
+ *
+ * แยกช่องแทนกล่องข้อความก้อนเดียว เพราะระบบต้องเอาไปกรอกลงแบบฟอร์มราชการ
+ * ที่มีช่องว่างแยกกันอยู่แล้ว และส่วนกลางต้องสรุปจำนวนคำขอรายอำเภอได้ (M11)
+ *
+ * "จังหวัด" ไม่มีช่องให้กรอก เพราะระบบรับเฉพาะภูเก็ตตามขอบเขตของโจทย์
+ * เซิร์ฟเวอร์เป็นคนเติมค่านี้ ไม่ใช่รับมาจากหน้าเว็บ
+ */
+function AddressFields({
+  value,
+  onChange,
+  districts,
+}: {
+  value: AddressInput;
+  onChange: (next: AddressInput) => void;
+  districts: string[];
+}) {
+  const set = (patch: Partial<AddressInput>) => onChange({ ...value, ...patch });
+
+  return (
+    <fieldset className="space-y-5">
+      <legend className="text-sm font-semibold text-ink">ที่อยู่สถานที่</legend>
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <TextField
+          label="บ้านเลขที่"
+          icon={MapPin}
+          placeholder="99/9"
+          value={value.address_no}
+          onChange={(e) => set({ address_no: e.target.value })}
+        />
+        <TextField
+          label="หมู่ที่"
+          inputMode="numeric"
+          placeholder="1"
+          hint="เว้นว่างได้ถ้าที่พักอยู่ในเขตเทศบาลที่ไม่มีหมู่"
+          value={value.moo ?? ""}
+          onChange={(e) => set({ moo: e.target.value.replace(/\D/g, "").slice(0, 3) })}
+        />
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <TextField
+          label="ซอย"
+          placeholder="เว้นว่างได้"
+          value={value.soi ?? ""}
+          onChange={(e) => set({ soi: e.target.value })}
+        />
+        <TextField
+          label="ถนน"
+          placeholder="กะรน"
+          hint="ไม่ต้องพิมพ์คำว่า ถนน"
+          value={value.road ?? ""}
+          onChange={(e) => set({ road: e.target.value })}
+        />
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <TextField
+          label="ตำบล"
+          placeholder="กะรน"
+          value={value.sub_district}
+          onChange={(e) => set({ sub_district: e.target.value })}
+        />
+
+        <div className="space-y-2">
+          <label htmlFor="district" className="block text-sm font-semibold text-ink">
+            อำเภอ
+          </label>
+          <select
+            id="district"
+            value={value.district}
+            onChange={(e) => set({ district: e.target.value })}
+            className="min-h-12 w-full rounded-xl border border-line bg-canvas px-4 py-3 text-base text-ink"
+          >
+            <option value="">เลือกอำเภอ</option>
+            {districts.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <TextField
+          label="รหัสไปรษณีย์"
+          inputMode="numeric"
+          maxLength={5}
+          placeholder="83100"
+          value={value.postal_code}
+          onChange={(e) => set({ postal_code: e.target.value.replace(/\D/g, "").slice(0, 5) })}
+        />
+        <div className="space-y-2">
+          <span className="block text-sm font-semibold text-ink">จังหวัด</span>
+          <p className="flex min-h-12 items-center rounded-xl border border-line bg-canvas px-4 py-3 text-base text-ink-muted">
+            ภูเก็ต
+          </p>
+          <p className="text-sm text-ink-muted">ระบบนี้รับคำขอเฉพาะจังหวัดภูเก็ต</p>
+        </div>
+      </div>
+    </fieldset>
   );
 }

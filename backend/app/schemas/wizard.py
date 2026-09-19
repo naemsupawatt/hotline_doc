@@ -6,7 +6,11 @@
 ข้อมูลตัวอย่างทั้งหมดเป็นข้อมูลสมมติ (กติกาข้อ 14)
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
+
+from app.models.enums import DocumentStatus
 
 # เพดานที่รับได้ของช่องกรอก — ไม่ใช่เกณฑ์จำแนกประเภท
 # เกณฑ์จำแนกอยู่ในตาราง classification_rule เท่านั้น ห้ามเอามาไว้ที่นี่
@@ -63,6 +67,18 @@ class ContactPointOut(BaseModel):
     notes: str | None = Field(default=None, examples=["ควรโทรนัดหมายล่วงหน้า"])
 
 
+class UploadedFileOut(BaseModel):
+    """ไฟล์หนึ่งรุ่นที่แนบไว้ — แสดงเฉพาะรุ่นปัจจุบันของแต่ละ slot"""
+
+    id: int = Field(examples=[12])
+    slot_no: int = Field(examples=[1], description="ลำดับไฟล์ในเอกสารชนิดเดียวกัน")
+    version_no: int = Field(examples=[1], description="รุ่นของไฟล์นี้ (ส่งซ้ำ = รุ่นใหม่)")
+    original_name: str = Field(examples=["tabien-baan.pdf"])
+    size_bytes: int = Field(examples=[248_000])
+    mime_type: str = Field(examples=["application/pdf"])
+    uploaded_at: datetime = Field(examples=["2026-09-19T22:10:00+07:00"])
+
+
 class DocumentOut(BaseModel):
     code: str = Field(examples=["B01"])
     name_th: str = Field(examples=["ใบอนุญาตก่อสร้างอาคาร (อ.1)"])
@@ -73,6 +89,10 @@ class DocumentOut(BaseModel):
     is_system_form: bool = Field(examples=[False])
     allows_multiple: bool = Field(examples=[False])
     accepted_mime: list[str] = Field(examples=[["application/pdf"]])
+
+    # สถานะรายฉบับ ตรงกับ legend 7 สถานะในแบบหน้าจอ
+    status: str = Field(default=DocumentStatus.NOT_UPLOADED, examples=["not_uploaded"])
+    files: list[UploadedFileOut] = Field(default_factory=list, description="ไฟล์รุ่นปัจจุบันของแต่ละ slot")
 
     # M4 — มีเฉพาะเอกสารหมวดที่ต้องขอจากหน่วยงานอื่น
     preparation_note: str | None = Field(
