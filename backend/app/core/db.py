@@ -13,7 +13,7 @@ class Base(DeclarativeBase):
     pass
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db() -> Generator[Session]:
     """FastAPI dependency — เปิด/ปิด session ให้อัตโนมัติต่อ 1 request"""
     db = SessionLocal()
     try:

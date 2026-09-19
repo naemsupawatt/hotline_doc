@@ -26,3 +26,12 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# ตาราง อปท. จัดคอลัมน์ให้อ่านง่ายและตรวจทานกับโจทย์ได้เร็ว จึงยอมให้ยาวเกิน 100
+"app/seeds/local_authorities.py" = ["E501"]
+
+[tool.pytest.ini_options]
+# ให้ pytest เห็นแพ็กเกจ app/ โดยไม่ต้องติดตั้งโปรเจกต์
+pythonpath = ["."]
+testpaths = ["tests"]
