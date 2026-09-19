@@ -128,7 +128,12 @@ brand asset แปลงเป็น WebP แล้ว, enums สถานะท
 `/operator/applications` `/operator/applications/[no]` `/operator/applications/[no]/license`
 `/officer/queue` `/officer/applications/[no]` `/central/overview`
 
-**ยังไม่เริ่ม:** endpoint กลุ่ม admin (US-09 หน้าแก้กฎ), Should/Could Have ทั้งหมด,
+**US-09 เสร็จแล้ว:** `/admin/settings` แก้เกณฑ์จำแนกและอัตราค่าธรรมเนียมจากหน้าจอ
+พร้อมปุ่ม "ลองจำแนก" ที่ทดสอบได้ทันทีโดยไม่บันทึกอะไร — วิธีสาธิตอยู่ใน
+`frontend/src/app/(admin)/README.md` **แก้อัตราค่าธรรมเนียม = เพิ่มแถวใหม่
+ไม่ทับของเดิม** เพราะใบอนุญาตชี้กลับมาที่ `fee_schedule_id`
+
+**ยังไม่เริ่ม:** admin หน้าแก้รายการเอกสาร/จุดติดต่อ/ผู้ใช้, Should/Could Have ทั้งหมด,
 deliverable ข้อ 1 (requirements.md) ข้อ 3 (wireframes) ข้อ 5 (test-cases.md) ข้อ 6 (สไลด์)
 (ยังเป็น stub), หน้าจอของผู้ประกอบการ/เจ้าหน้าที่/ส่วนกลางทั้งหมด,
 seed เอกสาร A01–A08/B01–B07, เอกสารส่งมอบข้อ 1/3/5/6

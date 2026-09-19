@@ -25,7 +25,7 @@ const LINKS: Record<UserRole, { href: string; label: string }[]> = {
   ],
   officer: [{ href: "/officer/queue", label: "คิวคำขอ" }],
   central: [{ href: "/central/overview", label: "ภาพรวมทั้งจังหวัด" }],
-  super_admin: [],
+  super_admin: [{ href: "/admin/settings", label: "ตั้งค่าเกณฑ์" }],
 };
 
 const ROLE_LABEL: Record<UserRole, string> = {

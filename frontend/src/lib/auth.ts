@@ -110,6 +110,7 @@ const ROLES_WITH_HOME: ReadonlySet<UserRole> = new Set<UserRole>([
   "operator",
   "officer",
   "central",
+  "super_admin",
 ]);
 
 export function hasHome(role: UserRole): boolean {
