@@ -58,12 +58,17 @@ export async function api<T>(path: string, init?: RequestInit & { token?: string
   const { token, headers, ...rest } = init ?? {};
   const url = `${BASE}${path}`;
 
+  // อัปโหลดไฟล์ส่งเป็น FormData ซึ่งเบราว์เซอร์ต้องเป็นคนตั้ง Content-Type เอง
+  // เพราะต้องแนบ boundary ต่อท้าย ถ้าเราตั้งเป็น application/json ทับ เซิร์ฟเวอร์
+  // จะแกะ multipart ไม่ออกและตอบ 422 โดยไม่บอกสาเหตุที่แท้จริง
+  const isFormData = rest.body instanceof FormData;
+
   let res: Response;
   try {
     res = await fetch(url, {
       ...rest,
       headers: {
-        "Content-Type": "application/json",
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...headers,
       },

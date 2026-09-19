@@ -1,0 +1,452 @@
+"""ทดสอบหน้าทำงานเจ้าหน้าที่ (M8, M9, T-08, T-09)
+
+เคสสำคัญที่สุดคือ T-09: เจ้าหน้าที่เขตหนึ่งเปิดคำขอของอีกเขตต้องถูกปฏิเสธ
+**และความพยายามนั้นต้องถูกบันทึกไว้** โจทย์เขียนข้อหลังไว้ชัด คนมักทำแต่ข้อแรก
+"""
+
+import shutil
+from random import randint
+from uuid import uuid4
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import delete, select
+
+from app.core.db import SessionLocal
+from app.main import app
+from app.models.application import Application, ApplicationStatusHistory
+from app.models.audit import AuditLog
+from app.models.authority import LocalAuthority
+from app.models.classification import ApplicationClassification
+from app.models.document import DocumentFile, DocumentReview
+from app.models.property import Operator, Property
+from app.models.user import OfficerAssignment, User
+from app.services import document as doc_svc
+from tests.test_thai_id import make_valid
+
+# ผู้ใช้ของแต่ละเคสต้องไม่ปนกัน เพราะเคสหนึ่งเปลี่ยนบทบาทและสังกัดของผู้ใช้
+# ถ้าใช้อีเมลชุดเดียวกันทุกเคสแล้วลบทิ้งระหว่างทาง จะมีจังหวะที่ token ของเคสหนึ่ง
+# ชี้ไปยังผู้ใช้ที่อีกเคสลบไปแล้ว ทำให้เทสต์ล้มแบบสุ่ม
+EMAIL_PREFIX = "pytest-officer-"
+
+PDF = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
+PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108020000009077"
+    "3df80000000c4944415408d763f8cfc000000301010018dd8db00000000049454e44ae426082"
+)
+
+
+def _test_users(db) -> list[int]:
+    return list(db.scalars(select(User.id).where(User.email.like(f"{EMAIL_PREFIX}%"))).all())
+
+
+def _cleanup() -> None:
+    """ล้างผู้ใช้ทดสอบทั้งหมดของไฟล์นี้ พร้อมข้อมูลที่ผูกอยู่
+
+    ลบจากปลายทางย้อนขึ้นต้นทาง ไม่งั้นติด foreign key
+    """
+    with SessionLocal() as db:
+        user_ids = _test_users(db)
+        if not user_ids:
+            return
+
+        operator_ids = list(
+            db.scalars(select(Operator.id).where(Operator.user_id.in_(user_ids))).all()
+        )
+        apps = (
+            list(
+                db.scalars(
+                    select(Application).where(Application.operator_id.in_(operator_ids))
+                ).all()
+            )
+            if operator_ids
+            else []
+        )
+        app_ids = [a.id for a in apps]
+        for row in apps:
+            shutil.rmtree(doc_svc.storage_root() / row.application_no, ignore_errors=True)
+
+        if app_ids:
+            file_ids = list(
+                db.scalars(
+                    select(DocumentFile.id).where(DocumentFile.application_id.in_(app_ids))
+                ).all()
+            )
+            if file_ids:
+                db.execute(
+                    delete(DocumentReview).where(DocumentReview.document_file_id.in_(file_ids))
+                )
+            db.execute(delete(DocumentFile).where(DocumentFile.application_id.in_(app_ids)))
+            db.execute(
+                delete(ApplicationClassification).where(
+                    ApplicationClassification.application_id.in_(app_ids)
+                )
+            )
+            db.execute(
+                delete(ApplicationStatusHistory).where(
+                    ApplicationStatusHistory.application_id.in_(app_ids)
+                )
+            )
+            db.execute(delete(Application).where(Application.id.in_(app_ids)))
+        if operator_ids:
+            db.execute(delete(Property).where(Property.operator_id.in_(operator_ids)))
+            db.execute(delete(Operator).where(Operator.id.in_(operator_ids)))
+
+        db.execute(delete(OfficerAssignment).where(OfficerAssignment.officer_id.in_(user_ids)))
+        db.execute(delete(AuditLog).where(AuditLog.actor_id.in_(user_ids)))
+        db.execute(delete(User).where(User.id.in_(user_ids)))
+        db.commit()
+
+
+def _register(client: TestClient, role_tag: str) -> tuple[str, str]:
+    """สมัครผู้ใช้ใหม่ที่ไม่ซ้ำกับใคร คืน (token, email)"""
+    tag = uuid4().hex[:8]
+    email = f"{EMAIL_PREFIX}{role_tag}-{tag}@example.com"
+    # เลขบัตรและเบอร์ต้องไม่ซ้ำเช่นกัน สร้างจากตัวเลขสุ่มแล้วเติมหลักตรวจสอบ
+    national_id = make_valid(f"{randint(10**11, 10**12 - 1)}")
+    phone = f"09{randint(10**7, 10**8 - 1)}"
+
+    res = client.post(
+        "/api/v1/auth/register",
+        json={
+            "first_name": "ทดสอบ",
+            "last_name": role_tag,
+            "national_id": national_id,
+            "phone": phone,
+            "email": email,
+            "password": "demo1234",
+        },
+    )
+    assert res.status_code == 201, res.text
+    return res.json()["access_token"], email
+
+
+def _make_officer(client: TestClient, code: str) -> str:
+    """สมัครแล้วเลื่อนเป็นเจ้าหน้าที่ของ อปท. ที่กำหนด
+
+    ปกติ Super Admin เป็นคนตั้งบทบาทและสังกัด (US-09) ที่นี่เซ็ตตรงในฐานข้อมูล
+    เพราะหน้าจัดการผู้ใช้ยังไม่ถูกสร้าง
+    """
+    _, email = _register(client, "officer")
+
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.email == email))
+        authority = db.scalar(select(LocalAuthority).where(LocalAuthority.code == code))
+        user.role = "officer"
+        db.add(OfficerAssignment(officer_id=user.id, local_authority_id=authority.id))
+        db.commit()
+
+    # role เปลี่ยนหลังออก token เดิม ต้องล็อกอินใหม่ให้ token มี role ที่ถูกต้อง
+    return client.post(
+        "/api/v1/auth/login", json={"identifier": email, "password": "demo1234"}
+    ).json()["access_token"]
+
+
+def auth(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _clean_module():
+    """ล้างครั้งเดียวก่อนและหลังทั้งไฟล์
+
+    ไม่ล้างระหว่างเคส เพราะผู้ใช้ของแต่ละเคสไม่ซ้ำกันอยู่แล้ว
+    และการลบระหว่างทางคือต้นเหตุที่ทำให้เทสต์ล้มแบบสุ่ม
+    """
+    _cleanup()
+    yield
+    _cleanup()
+
+
+@pytest.fixture(scope="module")
+def client():
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture
+def owner(client) -> str:
+    token, _ = _register(client, "owner")
+    return token
+
+
+@pytest.fixture
+def officer_a(client) -> str:
+    """เจ้าหน้าที่เทศบาลนครภูเก็ต"""
+    return _make_officer(client, "PKT-CITY")
+
+
+@pytest.fixture
+def officer_b(client) -> str:
+    """เจ้าหน้าที่เทศบาลตำบลกะรน"""
+    return _make_officer(client, "KRN-SUB")
+
+
+def authority_id(client, code: str) -> int:
+    return next(
+        a["id"] for a in client.get("/api/v1/wizard/local-authorities").json() if a["code"] == code
+    )
+
+
+def open_application(client, owner_token, code: str) -> str:
+    res = client.post(
+        "/api/v1/applications",
+        headers=auth(owner_token),
+        json={
+            "rooms": 6,
+            "guests": 24,
+            "has_restaurant": False,
+            "local_authority_id": authority_id(client, code),
+            "property_name": f"ที่พักเขต {code}",
+            "address": {
+                "address_no": "1",
+                "sub_district": "ตำบลทดสอบ",
+                "district": "เมืองภูเก็ต",
+                "postal_code": "83000",
+            },
+            "accommodation_kind": "detached_house",
+        },
+    )
+    assert res.status_code == 201, res.text
+    return res.json()["application_no"]
+
+
+def fill_and_submit(client, owner_token, no: str) -> None:
+    for code in ["A02", "A03", "B01"]:
+        client.post(
+            f"/api/v1/applications/{no}/documents/{code}",
+            headers=auth(owner_token),
+            files={"file": ("doc.pdf", PDF, "application/pdf")},
+        )
+    for code in ["A04", "A05"]:
+        client.post(
+            f"/api/v1/applications/{no}/documents/{code}",
+            headers=auth(owner_token),
+            files={"file": ("p.png", PNG, "image/png")},
+        )
+    client.post(f"/api/v1/applications/{no}/submit", headers=auth(owner_token))
+
+
+def file_ids(client, officer_token, no: str) -> dict[str, int]:
+    body = client.get(f"/api/v1/officer/applications/{no}", headers=auth(officer_token)).json()
+    docs = body["documents"]["self_service"] + body["documents"]["external"]
+    return {d["code"]: d["files"][0]["id"] for d in docs if d["files"]}
+
+
+def test_queue_shows_only_applications_in_my_authority(client, owner, officer_a):
+    """T-09 ฝั่งคิวงาน: คำขอของเขตอื่นต้องไม่โผล่มาให้เห็นตั้งแต่แรก"""
+    mine = open_application(client, owner, "PKT-CITY")
+    other = open_application(client, owner, "KRN-SUB")
+    fill_and_submit(client, owner, mine)
+    fill_and_submit(client, owner, other)
+
+    rows = client.get("/api/v1/officer/queue", headers=auth(officer_a)).json()
+    numbers = [r["application_no"] for r in rows]
+
+    assert mine in numbers
+    assert other not in numbers
+
+
+def test_t09_opening_another_authoritys_application_is_denied_and_logged(client, owner, officer_a):
+    """T-09 เต็มรูปแบบ: ปฏิเสธ **และบันทึกความพยายามนั้นไว้**"""
+    other = open_application(client, owner, "KRN-SUB")
+    fill_and_submit(client, owner, other)
+
+    res = client.get(f"/api/v1/officer/applications/{other}", headers=auth(officer_a))
+    assert res.status_code == 403
+    assert "นอกเขต" in res.json()["detail"]
+
+    with SessionLocal() as db:
+        logged = db.scalar(
+            select(AuditLog)
+            .where(
+                AuditLog.actor_id.in_(_test_users(db)),
+                AuditLog.action == "officer.cross_authority_denied",
+            )
+            .order_by(AuditLog.id.desc())
+        )
+    assert logged is not None, "ต้องบันทึกความพยายามเปิดคำขอข้ามเขต"
+    assert logged.outcome == "denied"
+    assert other in logged.detail
+
+
+def test_cross_authority_block_applies_to_every_action(client, owner, officer_a, officer_b):
+    """กันข้ามเขตต้องครอบทุกปุ่ม ไม่ใช่แค่หน้ารายละเอียด"""
+    other = open_application(client, owner, "KRN-SUB")
+    fill_and_submit(client, owner, other)
+    ids = file_ids(client, officer_b, other)
+
+    review = client.post(
+        f"/api/v1/officer/applications/{other}/documents/{ids['A02']}/review",
+        headers=auth(officer_a),
+        json={"decision": "pass"},
+    )
+    decide = client.post(
+        f"/api/v1/officer/applications/{other}/decide",
+        headers=auth(officer_a),
+        json={"decision": "approve"},
+    )
+    assert review.status_code == 403
+    assert decide.status_code == 403
+
+
+def test_operator_cannot_use_officer_endpoints(client, owner):
+    assert client.get("/api/v1/officer/queue", headers=auth(owner)).status_code == 403
+
+
+def test_reviewing_first_document_claims_the_application(client, owner, officer_a):
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+    ids = file_ids(client, officer_a, no)
+
+    body = client.post(
+        f"/api/v1/officer/applications/{no}/documents/{ids['A02']}/review",
+        headers=auth(officer_a),
+        json={"decision": "pass"},
+    ).json()
+
+    assert body["status"] == "under_review"
+    assert "A02" not in " ".join(body["pending_documents"])
+
+
+def test_revision_requires_a_reason(client, owner, officer_a):
+    """ผู้ยื่นต้องรู้ว่าต้องแก้อะไร การขอแก้ไขโดยไม่บอกเหตุผลจึงต้องถูกกัน"""
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+    ids = file_ids(client, officer_a, no)
+
+    res = client.post(
+        f"/api/v1/officer/applications/{no}/documents/{ids['A02']}/review",
+        headers=auth(officer_a),
+        json={"decision": "request_revision"},
+    )
+    assert res.status_code == 422
+    assert "เหตุผล" in res.json()["detail"]
+
+
+def test_cannot_approve_before_every_mandatory_document_passes(client, owner, officer_a):
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    res = client.post(
+        f"/api/v1/officer/applications/{no}/decide",
+        headers=auth(officer_a),
+        json={"decision": "approve"},
+    )
+    assert res.status_code == 422
+    assert "ยังไม่ผ่านการตรวจ" in res.json()["detail"]
+
+
+def test_t08_request_revision_reopens_uploads_for_the_operator(client, owner, officer_a):
+    """T-08: ขอเอกสารเพิ่ม -> สถานะเปลี่ยนเป็นรอผู้ยื่นแก้ไข และแก้ไขได้จริง"""
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    decided = client.post(
+        f"/api/v1/officer/applications/{no}/decide",
+        headers=auth(officer_a),
+        json={"decision": "request_revision", "reason": "สำเนาทะเบียนบ้านอ่านไม่ชัด"},
+    ).json()
+    assert decided["status"] == "needs_revision"
+    assert decided["decision_reason"] == "สำเนาทะเบียนบ้านอ่านไม่ชัด"
+
+    # ยื่นแล้วเคยถูกล็อก ตอนนี้ต้องส่งใหม่ได้
+    again = client.post(
+        f"/api/v1/applications/{no}/documents/A02",
+        headers=auth(owner),
+        files={"file": ("fixed.pdf", PDF, "application/pdf")},
+    )
+    assert again.status_code == 201
+    assert again.json()["version_no"] == 2, "ส่งใหม่ต้องเป็นรุ่นใหม่ ไม่ทับของเดิม"
+
+    assert (
+        client.post(f"/api/v1/applications/{no}/submit", headers=auth(owner)).json()["status"]
+        == "submitted"
+    )
+
+
+def test_full_review_to_approval_writes_the_whole_trail(client, owner, officer_a):
+    """M9: ทุกการเปลี่ยนสถานะต้องรู้ว่าใครทำ เมื่อใด จากสถานะใดเป็นสถานะใด"""
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    for file_id in file_ids(client, officer_a, no).values():
+        client.post(
+            f"/api/v1/officer/applications/{no}/documents/{file_id}/review",
+            headers=auth(officer_a),
+            json={"decision": "pass"},
+        )
+
+    body = client.post(
+        f"/api/v1/officer/applications/{no}/decide",
+        headers=auth(officer_a),
+        json={"decision": "approve"},
+    ).json()
+
+    assert body["status"] == "approved"
+    assert body["decided_at"] is not None
+    assert body["can_approve"] is False
+
+    with SessionLocal() as db:
+        application = db.scalar(select(Application).where(Application.application_no == no))
+        history = [
+            h.to_status
+            for h in db.scalars(
+                select(ApplicationStatusHistory)
+                .where(ApplicationStatusHistory.application_id == application.id)
+                .order_by(ApplicationStatusHistory.id)
+            ).all()
+        ]
+        assert history == ["draft", "submitted", "under_review", "approved"]
+
+        reviews = list(
+            db.scalars(
+                select(DocumentReview).where(
+                    DocumentReview.reviewer_id == application.assigned_officer_id
+                )
+            ).all()
+        )
+        assert len(reviews) == 5, "ต้องมีผลตรวจรายฉบับครบทุกฉบับ"
+        assert all(r.reviewed_at is not None for r in reviews)
+
+
+def test_decided_application_cannot_be_changed_again(client, owner, officer_a):
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+    ids = file_ids(client, officer_a, no)
+    for file_id in ids.values():
+        client.post(
+            f"/api/v1/officer/applications/{no}/documents/{file_id}/review",
+            headers=auth(officer_a),
+            json={"decision": "pass"},
+        )
+    client.post(
+        f"/api/v1/officer/applications/{no}/decide",
+        headers=auth(officer_a),
+        json={"decision": "approve"},
+    )
+
+    again = client.post(
+        f"/api/v1/officer/applications/{no}/decide",
+        headers=auth(officer_a),
+        json={"decision": "reject", "reason": "เปลี่ยนใจ"},
+    )
+    review = client.post(
+        f"/api/v1/officer/applications/{no}/documents/{ids['A02']}/review",
+        headers=auth(officer_a),
+        json={"decision": "pass"},
+    )
+    assert again.status_code == 422
+    assert review.status_code == 422
+
+
+def test_rejecting_requires_a_reason(client, owner, officer_a):
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    res = client.post(
+        f"/api/v1/officer/applications/{no}/decide",
+        headers=auth(officer_a),
+        json={"decision": "reject"},
+    )
+    assert res.status_code == 422

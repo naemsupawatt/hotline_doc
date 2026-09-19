@@ -2,24 +2,37 @@
 
 import {
   Building2,
+  CheckCircle2,
   Clock,
   Landmark,
   MapPin,
+  Paperclip,
   PencilLine,
+  Plus,
+  Send,
   Upload,
   Users,
   UtensilsCrossed,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Mascot } from "@/components/brand/Mascot";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SectionCard } from "@/components/common/SectionCard";
 import { StatusPill } from "@/components/common/StatusPill";
+import { Button } from "@/components/ui/Button";
 import { ApiError } from "@/lib/api";
-import { type Application, getApplication, labelForKind } from "@/lib/applications";
+import {
+  type Application,
+  allDocuments,
+  formatSize,
+  getApplication,
+  labelForKind,
+  submitApplication,
+  uploadDocument,
+} from "@/lib/applications";
 import { type RequiredDocument, describeAccepted } from "@/lib/wizard";
-import type { ApplicationStatus } from "@/types/enums";
+import type { ApplicationStatus, DocumentStatus } from "@/types/enums";
 
 export function ApplicationView({ applicationNo }: { applicationNo: string }) {
   const [application, setApplication] = useState<Application | null>(null);
@@ -29,9 +42,7 @@ export function ApplicationView({ applicationNo }: { applicationNo: string }) {
     getApplication(applicationNo)
       .then(setApplication)
       .catch((err) =>
-        setError(
-          err instanceof ApiError ? err.message : "เปิดคำขอไม่ได้ กรุณาลองใหม่อีกครั้ง",
-        ),
+        setError(err instanceof ApiError ? err.message : "เปิดคำขอไม่ได้ กรุณาลองใหม่อีกครั้ง"),
       );
   }, [applicationNo]);
 
@@ -56,6 +67,7 @@ export function ApplicationView({ applicationNo }: { applicationNo: string }) {
   }
 
   const { property, documents } = application;
+  const editable = application.status === "draft" || application.status === "needs_revision";
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
@@ -131,10 +143,7 @@ export function ApplicationView({ applicationNo }: { applicationNo: string }) {
         </div>
       </div>
 
-      <h2 className="mt-10 text-xl font-bold text-ink">เอกสารของคำขอนี้</h2>
-      <p className="mt-1 text-ink-muted">
-        ต้องครบทุกฉบับที่ระบุว่าบังคับ จึงจะยื่นคำขอได้
-      </p>
+      <Progress application={application} />
 
       <div className="mt-5 grid gap-6 lg:grid-cols-2">
         <SectionCard
@@ -145,7 +154,13 @@ export function ApplicationView({ applicationNo }: { applicationNo: string }) {
         >
           <div className="space-y-3">
             {documents.self_service.map((doc) => (
-              <DocumentRow key={doc.code} doc={doc} />
+              <DocumentRow
+                key={doc.code}
+                doc={doc}
+                applicationNo={applicationNo}
+                editable={editable}
+                onUploaded={setApplication}
+              />
             ))}
           </div>
         </SectionCard>
@@ -158,12 +173,332 @@ export function ApplicationView({ applicationNo }: { applicationNo: string }) {
         >
           <div className="space-y-3">
             {documents.external.map((doc) => (
-              <DocumentRow key={doc.code} doc={doc} />
+              <DocumentRow
+                key={doc.code}
+                doc={doc}
+                applicationNo={applicationNo}
+                editable={editable}
+                onUploaded={setApplication}
+              />
             ))}
           </div>
         </SectionCard>
       </div>
+
+      <SubmitPanel
+        application={application}
+        editable={editable}
+        onSubmitted={setApplication}
+      />
     </main>
+  );
+}
+
+/* ------------------------------------------------------------ ความคืบหน้า */
+
+function Progress({ application }: { application: Application }) {
+  const docs = allDocuments(application);
+  const total = docs.filter((d) => d.is_mandatory).length;
+  const done = docs.filter((d) => d.is_mandatory && d.status !== "not_uploaded").length;
+  const percent = total === 0 ? 0 : Math.round((done / total) * 100);
+
+  return (
+    <section className="mt-10" aria-labelledby="progress-heading">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 id="progress-heading" className="text-xl font-bold text-ink">
+            เอกสารของคำขอนี้
+          </h2>
+          <p className="mt-1 text-ink-muted">
+            ต้องครบทุกฉบับที่ระบุว่าบังคับ จึงจะยื่นคำขอได้
+          </p>
+        </div>
+        <p className="text-sm font-semibold text-ink">
+          เตรียมแล้ว {done} จาก {total} ฉบับ
+        </p>
+      </div>
+
+      {/* NFR Accessibility: แถบสีสื่อความหมายลำพังไม่ได้ ต้องมีตัวเลขกำกับ (ข้างบน) */}
+      <div
+        className="mt-3 h-2 w-full overflow-hidden rounded-full bg-line"
+        role="progressbar"
+        aria-valuenow={done}
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-labelledby="progress-heading"
+      >
+        <div
+          className="h-full rounded-full bg-brand-500 transition-all"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </section>
+  );
+}
+
+/* --------------------------------------------------------------- ปุ่มยื่น */
+
+function SubmitPanel({
+  application,
+  editable,
+  onSubmitted,
+}: {
+  application: Application;
+  editable: boolean;
+  onSubmitted: (a: Application) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  if (!editable) {
+    return (
+      <div className="mt-8 flex items-start gap-3 rounded-card border border-line bg-success-bg/40 p-5">
+        <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-success-fg" aria-hidden />
+        <div>
+          <p className="font-semibold text-ink">ยื่นคำขอเรียบร้อยแล้ว</p>
+          <p className="mt-1 text-sm text-ink-muted">
+            เจ้าหน้าที่จะตรวจเอกสารและแจ้งผลกลับ ระหว่างนี้แก้ไขเอกสารไม่ได้
+            หากเจ้าหน้าที่ขอให้แก้ไข ระบบจะเปิดให้ส่งใหม่เอง
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  async function onSubmit() {
+    setError(null);
+    setPending(true);
+    try {
+      onSubmitted(await submitApplication(application.application_no));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "ยื่นคำขอไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="mt-8 rounded-card border border-line bg-surface p-5">
+      {/* M6: ห้ามทำแค่ปุ่มสีเทา ต้องบอกด้วยว่าขาดฉบับใด (T-06) */}
+      {application.missing_documents.length > 0 && (
+        <div className="mb-4 rounded-xl bg-warn-bg px-4 py-3">
+          <p className="font-medium text-ink">
+            ยังยื่นไม่ได้ เพราะขาดเอกสารบังคับอีก {application.missing_documents.length} ฉบับ
+          </p>
+          <ul className="mt-1.5 list-inside list-disc text-sm text-ink-muted">
+            {application.missing_documents.map((m) => (
+              <li key={m.code}>
+                {m.code} {m.name_th}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {error && (
+        <p
+          role="alert"
+          className="mb-4 rounded-xl bg-danger-bg px-4 py-3 text-sm font-medium text-danger-fg"
+        >
+          {error}
+        </p>
+      )}
+
+      <Button onClick={onSubmit} disabled={!application.can_submit || pending}>
+        {pending ? "กำลังยื่นคำขอ…" : "ยื่นคำขอ"}
+        {pending ? null : <Send className="size-5" aria-hidden />}
+      </Button>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------- แถวเอกสาร */
+
+function DocumentRow({
+  doc,
+  applicationNo,
+  editable,
+  onUploaded,
+}: {
+  doc: RequiredDocument;
+  applicationNo: string;
+  editable: boolean;
+  onUploaded: (a: Application) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function upload(file: File, slotNo?: number) {
+    setError(null);
+    setPending(true);
+    try {
+      await uploadDocument(applicationNo, doc.code, file, slotNo);
+      // ดึงคำขอใหม่ทั้งใบ เพื่อให้สถานะ แถบความคืบหน้า และปุ่มยื่น ตรงกันเสมอ
+      onUploaded(await getApplication(applicationNo));
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "อัปโหลดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <article className="rounded-xl border border-line bg-surface p-3">
+      <div className="flex items-start gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-50 text-sm font-bold text-brand-700">
+          {doc.code}
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-medium text-ink">{doc.name_th}</h3>
+            {doc.is_mandatory && (
+              <span className="rounded-full bg-danger-bg px-2 py-0.5 text-xs font-medium text-danger-fg">
+                บังคับ
+              </span>
+            )}
+            <StatusPill status={doc.status as DocumentStatus} />
+          </div>
+
+          <p className="mt-1 flex items-center gap-1.5 text-sm text-ink-muted">
+            {doc.is_system_form ? (
+              <PencilLine className="size-3.5 shrink-0" aria-hidden />
+            ) : (
+              <Upload className="size-3.5 shrink-0" aria-hidden />
+            )}
+            {doc.is_system_form
+              ? "ระบบสร้างเอกสารให้จากข้อมูลที่กรอก ไม่ต้องแนบไฟล์"
+              : describeAccepted(doc.accepted_mime)}
+          </p>
+
+          {doc.contact_point && (
+            <p className="mt-1.5 flex items-start gap-1.5 text-sm text-ink-muted">
+              <MapPin className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              ไปติดต่อที่ {doc.contact_point.office_name}
+              {doc.contact_point.estimated_days
+                ? ` · ใช้เวลาประมาณ ${doc.contact_point.estimated_days} วัน`
+                : ""}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {doc.files.length > 0 && (
+        <ul className="mt-3 space-y-2">
+          {doc.files.map((file) => (
+            <li
+              key={file.id}
+              className="flex flex-wrap items-center gap-2 rounded-lg bg-canvas px-3 py-2 text-sm"
+            >
+              <Paperclip className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
+              <a
+                href={`/api/files/${file.id}`}
+                onClick={(e) => e.preventDefault()}
+                className="min-w-0 flex-1 truncate font-medium text-ink"
+                title={file.original_name}
+              >
+                {file.original_name}
+              </a>
+              <span className="text-ink-muted">{formatSize(file.size_bytes)}</span>
+              {file.version_no > 1 && (
+                <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
+                  รุ่นที่ {file.version_no}
+                </span>
+              )}
+              {editable && (
+                <FilePicker
+                  label="ส่งใหม่"
+                  accept={doc.accepted_mime}
+                  disabled={pending}
+                  onPick={(f) => upload(f, file.slot_no)}
+                />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {error && (
+        <p role="alert" className="mt-2 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger-fg">
+          {error}
+        </p>
+      )}
+
+      {editable && !doc.is_system_form && (
+        <div className="mt-3">
+          <FilePicker
+            label={
+              doc.files.length === 0
+                ? "เลือกไฟล์"
+                : doc.allows_multiple
+                  ? "แนบไฟล์เพิ่ม"
+                  : "แนบไฟล์ใหม่แทนของเดิม"
+            }
+            icon={doc.files.length > 0 && doc.allows_multiple ? Plus : Upload}
+            accept={doc.accepted_mime}
+            disabled={pending}
+            variant="outline"
+            onPick={(f) => upload(f)}
+          />
+          {pending && <p className="mt-2 text-sm text-ink-muted">กำลังอัปโหลด…</p>}
+        </div>
+      )}
+    </article>
+  );
+}
+
+/**
+ * ปุ่มเลือกไฟล์ — ซ่อน input จริงไว้ใต้ label เพราะ input[type=file] จัดสไตล์ไม่ได้
+ * ใช้ label ห่อแทน div เพื่อให้ยังกดด้วยคีย์บอร์ดและ screen reader ได้
+ */
+function FilePicker({
+  label,
+  accept,
+  disabled,
+  onPick,
+  icon: Icon,
+  variant = "ghost",
+}: {
+  label: string;
+  accept: string[];
+  disabled?: boolean;
+  onPick: (file: File) => void;
+  icon?: typeof Upload;
+  variant?: "ghost" | "outline";
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const style =
+    variant === "outline"
+      ? "border-2 border-brand-500 bg-surface text-brand-600 hover:bg-brand-50 min-h-12 px-5 py-3 text-base w-full"
+      : "text-brand-600 hover:bg-brand-50 min-h-10 px-3 py-2 text-sm";
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => inputRef.current?.click()}
+        className={`inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${style}`}
+      >
+        {Icon && <Icon className="size-5" aria-hidden />}
+        {label}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept.join(",")}
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          // ล้างค่าเพื่อให้เลือกไฟล์ชื่อเดิมซ้ำแล้ว onChange ยังทำงาน
+          e.target.value = "";
+          if (file) onPick(file);
+        }}
+      />
+    </>
   );
 }
 
@@ -186,51 +521,5 @@ function Fact({
       </dt>
       <dd className="mt-0.5 font-medium text-ink">{value}</dd>
     </div>
-  );
-}
-
-function DocumentRow({ doc }: { doc: RequiredDocument }) {
-  return (
-    <article className="rounded-xl border border-line bg-surface p-3">
-      <div className="flex items-start gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-50 text-sm font-bold text-brand-700">
-          {doc.code}
-        </span>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-medium text-ink">{doc.name_th}</h3>
-            {doc.is_mandatory && (
-              <span className="rounded-full bg-danger-bg px-2 py-0.5 text-xs font-medium text-danger-fg">
-                บังคับ
-              </span>
-            )}
-            {/* ยังไม่มีการอัปโหลดในระบบ ทุกฉบับจึงเป็น "ยังไม่ได้อัปโหลด" */}
-            <StatusPill status="not_uploaded" />
-          </div>
-
-          <p className="mt-1 flex items-center gap-1.5 text-sm text-ink-muted">
-            {doc.is_system_form ? (
-              <PencilLine className="size-3.5 shrink-0" aria-hidden />
-            ) : (
-              <Upload className="size-3.5 shrink-0" aria-hidden />
-            )}
-            {doc.is_system_form
-              ? "ระบบสร้างเอกสารให้จากข้อมูลที่กรอก"
-              : describeAccepted(doc.accepted_mime)}
-          </p>
-
-          {doc.contact_point && (
-            <p className="mt-1.5 flex items-start gap-1.5 text-sm text-ink-muted">
-              <MapPin className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              ไปติดต่อที่ {doc.contact_point.office_name}
-              {doc.contact_point.estimated_days
-                ? ` · ใช้เวลาประมาณ ${doc.contact_point.estimated_days} วัน`
-                : ""}
-            </p>
-          )}
-        </div>
-      </div>
-    </article>
   );
 }

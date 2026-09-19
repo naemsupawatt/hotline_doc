@@ -56,12 +56,13 @@ export type StartApplicationInput = {
 export type ApplicationProperty = {
   name: string;
   address: Address;
+  /** ชื่อ อปท. ที่ที่พักตั้งอยู่ — มาจาก local_authority_id ของคำขอ */
+  local_authority_name: string;
   room_count: number;
   max_guests: number;
   has_restaurant: boolean;
   accommodation_kind: string | null;
   accommodation_kind_other: string | null;
-  local_authority_name: string;
 };
 
 export type Application = {
@@ -79,6 +80,15 @@ export type Application = {
   fee: ClassifyResult["fee"];
   property: ApplicationProperty;
   documents: ClassifyResult["documents"];
+  /** M6: หน้าจอใช้สองค่านี้ตัดสินว่าจะเปิดปุ่ม "ยื่นคำขอ" หรือไม่ */
+  can_submit: boolean;
+  missing_documents: MissingDocument[];
+};
+
+/** T-06: ต้องบอกให้ครบว่าขาดฉบับใด ไม่ใช่แค่ทำปุ่มเป็นสีเทา */
+export type MissingDocument = {
+  code: string;
+  name_th: string;
 };
 
 export type ApplicationSummary = {
@@ -109,6 +119,52 @@ export function myApplications() {
 
 export function getApplication(applicationNo: string) {
   return api<Application>(`/applications/${encodeURIComponent(applicationNo)}`, authed());
+}
+
+export type UploadedFile = {
+  id: number;
+  slot_no: number;
+  version_no: number;
+  original_name: string;
+  size_bytes: number;
+  mime_type: string;
+  uploaded_at: string;
+};
+
+/**
+ * อัปโหลดเอกสารหนึ่งฉบับ
+ *
+ * ไม่ส่ง slotNo = แนบไฟล์ใหม่ (เอกสารที่แนบได้ไฟล์เดียวจะกลายเป็นรุ่นใหม่ของไฟล์เดิม)
+ * ส่ง slotNo = ตั้งใจแทนที่ไฟล์เดิมของ slot นั้น
+ */
+export function uploadDocument(
+  applicationNo: string,
+  code: string,
+  file: File,
+  slotNo?: number,
+) {
+  const form = new FormData();
+  form.append("file", file);
+  if (slotNo !== undefined) form.append("slot_no", String(slotNo));
+
+  return api<UploadedFile>(
+    `/applications/${encodeURIComponent(applicationNo)}/documents/${code}`,
+    { method: "POST", body: form, ...authed() },
+  );
+}
+
+export function submitApplication(applicationNo: string) {
+  return api<Application>(`/applications/${encodeURIComponent(applicationNo)}/submit`, {
+    method: "POST",
+    ...authed(),
+  });
+}
+
+/** ขนาดไฟล์แบบที่คนอ่านเข้าใจ — NFR Usability ห้ามโชว์จำนวนไบต์ดิบ */
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} ไบต์`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 /** รวมเอกสารทั้งสองหมวดเป็นชุดเดียว เรียงตามที่ backend ส่งมา */

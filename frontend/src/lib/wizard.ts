@@ -27,6 +27,17 @@ export type ContactPoint = {
   notes: string | null;
 };
 
+/** ไฟล์หนึ่งรุ่นที่แนบไว้ — ต้องตรงกับ UploadedFileOut ใน schemas/wizard.py */
+export type AttachedFile = {
+  id: number;
+  slot_no: number;
+  version_no: number;
+  original_name: string;
+  size_bytes: number;
+  mime_type: string;
+  uploaded_at: string;
+};
+
 export type RequiredDocument = {
   code: string;
   name_th: string;
@@ -39,6 +50,10 @@ export type RequiredDocument = {
   preparation_note: string | null;
   estimated_days: number | null;
   contact_point: ContactPoint | null;
+  /** ตรงกับ DocumentStatus ใน types/enums.ts */
+  status: string;
+  /** ไฟล์รุ่นปัจจุบันของแต่ละ slot */
+  files: AttachedFile[];
 };
 
 export type ClassifyResult = {
