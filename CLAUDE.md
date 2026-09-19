@@ -68,13 +68,21 @@ nvm use            # จำเป็น! default ของเครื่อง�
 **เสร็จแล้ว:** โครงโปรเจกต์ทั้งสองฝั่ง, design token จากสีโลโก้จริง, คอมโพเนนต์กลาง 6 ตัว
 (`PageHeader` `SectionCard` `DocRow` `StatusPill` `Stepper` `AiNotice`), `<Logo>` `<Mascot>`,
 brand asset แปลงเป็น WebP แล้ว, enums สถานะทั้งระบบ, router 7 กลุ่ม (ยังเป็น stub),
-seed อปท. 19 แห่ง, สคริปต์ setup/dev/git-setup, โครงเอกสารส่งมอบ
+สคริปต์ setup/dev/git-setup, โครงเอกสารส่งมอบ
 
-**ยังไม่เริ่ม:** ER Diagram + models + migration (คอขวดถัดไป), endpoint ทุกตัว,
-หน้าจอจริงทุกหน้า, เอกสารส่งมอบข้อ 1/2/3/5/6
+**ชั้นข้อมูลเสร็จแล้ว (19 ก.ย. บ่าย):**
+- schema 20 ตาราง + migration แรก รันผ่านทั้ง upgrade และ downgrade
+- `ClassificationRule` / `FeeSchedule` / `DocumentFile` เป็น config-driven ตั้งแต่แรกตามที่วางไว้
+- seed ลง DB จริงแล้ว: อปท. 19 แห่ง, ประเภทที่พัก 4, กฎจำแนก 4, อัตราค่าธรรมเนียม 2
+- `backend/tests/` 13 เคสครอบ T-01..T-05 + เคสขอบ ผ่านหมด (`uv run pytest`)
+- ER Diagram + คำอธิบาย 3NF อยู่ที่ `docs/database.md` (deliverable ข้อ 2 เสร็จ)
 
-**ขั้นถัดไปที่วางไว้:** ออกแบบ ER Diagram + SQL schema ให้ `ClassificationRule` / `FeeSchedule` /
-`DocumentFile` (versioning) เป็น config-driven ตั้งแต่แรก
+**ยังไม่เริ่ม:** endpoint ทุกตัว (ยังเป็น stub ทั้ง 7 กลุ่ม), service layer ยังว่าง,
+หน้าจอจริงทุกหน้า (มี `page.tsx` หน้าเดียว), seed เอกสาร A01–A08/B01–B07 ยังไม่มี,
+เอกสารส่งมอบข้อ 1/3/5/6
+
+**ขั้นถัดไป:** seed `DocumentType` + `DocumentRequirement` (M3/M4 ใช้ตารางนี้ทั้งคู่)
+แล้วทำ service จำแนกประเภท + endpoint wizard ให้ต่อกับ FE ได้
 
 ## โครงสร้างโค้ด
 
