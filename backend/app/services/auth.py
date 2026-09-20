@@ -137,3 +137,106 @@ def register(
         ip=ip,
     )
     return user, None
+
+
+def update_profile(
+    db: Session,
+    *,
+    user: User,
+    first_name: str,
+    last_name: str,
+    email: str,
+    phone: str,
+    ip: str | None = None,
+) -> tuple[User | None, str | None]:
+    """แก้ข้อมูลบัญชีของตัวเอง คืน (ผู้ใช้, ข้อความผิดพลาด) เหมือน register
+
+    อีเมลกับเบอร์โทรเป็นกุญแจเข้าสู่ระบบทั้งคู่ (M1) การแก้จึงต้องกันซ้ำแบบเดียว
+    กับตอนสมัคร มิฉะนั้นคนสองคนจะเข้าสู่ระบบด้วยกุญแจเดียวกันไม่ได้ทั้งคู่
+
+    ไม่แตะ national_id และ role โดยตั้งใจ — เลขบัตรคือกลไกกันบัญชีขยะที่เหลืออยู่
+    หลังตัดสินใจไม่ทำ OTP ส่วน role ถ้าเจ้าของบัญชีเปลี่ยนเองได้ ก็เท่ากับ
+    ใครก็เลื่อนตัวเองเป็นเจ้าหน้าที่ได้
+    """
+    key = email.strip().lower()
+
+    duplicate_email = db.scalar(select(User).where(User.email == key, User.id != user.id))
+    if duplicate_email:
+        return None, "อีเมลนี้ถูกใช้กับบัญชีอื่นแล้ว กรุณาใช้อีเมลอื่น"
+
+    duplicate_phone = db.scalar(select(User).where(User.phone == phone, User.id != user.id))
+    if duplicate_phone:
+        return None, "หมายเลขโทรศัพท์นี้ถูกใช้กับบัญชีอื่นแล้ว กรุณาใช้เบอร์อื่น"
+
+    # บันทึกว่าแก้ "ช่องไหน" ไม่ใช่ "แก้เป็นอะไร" เพราะอีเมลและเบอร์โทรเป็น
+    # ข้อมูลส่วนบุคคล ไม่ควรไปกองอยู่ในตาราง audit ที่คนอื่นเปิดอ่านได้
+    changed = [
+        label
+        for label, before, after in (
+            ("ชื่อ", user.first_name, first_name),
+            ("นามสกุล", user.last_name, last_name),
+            ("อีเมล", user.email, key),
+            ("เบอร์โทรศัพท์", user.phone, phone),
+        )
+        if before != after
+    ]
+
+    user.first_name = first_name
+    user.last_name = last_name
+    user.email = key
+    user.phone = phone
+
+    db.add(
+        AuditLog(
+            actor_id=user.id,
+            action="profile.update",
+            entity_type="app_user",
+            entity_id=user.id,
+            outcome="success",
+            detail=f"แก้ข้อมูลบัญชี: {', '.join(changed)}" if changed else "บันทึกโดยไม่มีการเปลี่ยนแปลง",
+            ip_address=ip,
+        )
+    )
+    return user, None
+
+
+def change_password(
+    db: Session,
+    *,
+    user: User,
+    current_password: str,
+    new_password: str,
+    ip: str | None = None,
+) -> str | None:
+    """เปลี่ยนรหัสผ่าน คืนข้อความผิดพลาด หรือ None เมื่อสำเร็จ
+
+    กรอกรหัสเดิมผิดก็ต้องบันทึกไว้ เพราะเป็น "ความพยายามเข้าถึง" แบบเดียวกับ
+    การล็อกอินไม่สำเร็จและ T-09 — ถ้าบันทึกเฉพาะที่สำเร็จ จะตรวจย้อนหลังไม่ได้ว่า
+    มีใครเอาโทเคนที่ขโมยไปลองยึดบัญชีหรือไม่
+    """
+    if not verify_password(current_password, user.password_hash):
+        _log_password_change(db, user=user, outcome="denied", detail="รหัสผ่านเดิมไม่ถูกต้อง", ip=ip)
+        return "รหัสผ่านเดิมไม่ถูกต้อง กรุณาตรวจสอบแล้วลองใหม่อีกครั้ง"
+
+    if verify_password(new_password, user.password_hash):
+        return "รหัสผ่านใหม่ซ้ำกับรหัสผ่านเดิม กรุณาตั้งรหัสผ่านอื่น"
+
+    user.password_hash = hash_password(new_password)
+    _log_password_change(db, user=user, outcome="success", detail="เปลี่ยนรหัสผ่านสำเร็จ", ip=ip)
+    return None
+
+
+def _log_password_change(
+    db: Session, *, user: User, outcome: str, detail: str, ip: str | None
+) -> None:
+    db.add(
+        AuditLog(
+            actor_id=user.id,
+            action="password.change",
+            entity_type="app_user",
+            entity_id=user.id,
+            outcome=outcome,
+            detail=detail,
+            ip_address=ip,
+        )
+    )

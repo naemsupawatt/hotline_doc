@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.models.document import DocumentFile
 from app.models.enums import DocumentCategory, DocumentStatus
+from app.schemas.auth import UserOut
 from app.schemas.wizard import (
     ContactPointOut,
     DocumentChecklistOut,
@@ -271,4 +272,29 @@ def to_system_form_out(db, application, snapshot, form, *, can_sign: bool):
             else None
         ),
         can_sign=can_sign,
+    )
+
+
+def to_profile_out(db, user):
+    """ข้อมูลบัญชีสำหรับหน้า "บัญชีของฉัน"
+
+    เจ้าหน้าที่ต้องเห็นด้วยว่าตัวเองสังกัด อปท. ใด เพราะนั่นคือสิ่งที่กำหนดว่า
+    จะเห็นคำขอของใครได้บ้าง (T-09) คนที่ไม่รู้ว่าตัวเองอยู่เขตไหนจะงงว่าทำไม
+    คำขอที่เพื่อนบอกให้ดูกลับเปิดไม่ได้
+    """
+    from app.models.authority import LocalAuthority
+    from app.models.user import OfficerAssignment
+    from app.schemas.auth import ProfileOut
+
+    authorities = db.scalars(
+        select(LocalAuthority.name)
+        .join(OfficerAssignment, OfficerAssignment.local_authority_id == LocalAuthority.id)
+        .where(OfficerAssignment.officer_id == user.id, OfficerAssignment.is_active)
+        .order_by(LocalAuthority.name)
+    ).all()
+
+    return ProfileOut(
+        **UserOut.model_validate(user).model_dump(),
+        created_at=user.created_at,
+        local_authorities=list(authorities),
     )

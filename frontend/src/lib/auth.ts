@@ -66,6 +66,22 @@ function saveSession(res: TokenResponse, remember: boolean) {
   store.setItem(USER_KEY, JSON.stringify(res.user));
 }
 
+/**
+ * เขียนทับข้อมูลผู้ใช้ที่เก็บไว้ หลังแก้ข้อมูลบัญชี
+ *
+ * เก็บลง store เดิมที่ session นี้ใช้อยู่ (จำการเข้าสู่ระบบ = localStorage)
+ * ไม่งั้นการแก้ชื่อครั้งเดียวจะทำให้มีผู้ใช้ค้างอยู่สองที่คนละเวอร์ชัน
+ *
+ * event "storage" ของเบราว์เซอร์ไม่ยิงให้แท็บที่เป็นคนเขียนเอง จึงต้อง
+ * dispatch เองด้วย ไม่งั้นชื่อบนแถบเมนูจะยังเป็นชื่อเดิมจนกว่าจะรีเฟรช
+ */
+export function saveUser(user: AuthUser) {
+  const store =
+    window.localStorage.getItem(USER_KEY) !== null ? window.localStorage : window.sessionStorage;
+  store.setItem(USER_KEY, JSON.stringify(user));
+  window.dispatchEvent(new StorageEvent("storage", { key: USER_KEY }));
+}
+
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem(TOKEN_KEY) ?? window.sessionStorage.getItem(TOKEN_KEY);

@@ -82,6 +82,7 @@ nvm use            # จำเป็น! default ของเครื่อง�
 | M11 ภาพรวมส่วนกลาง | เสร็จ |
 | US-09 Super Admin แก้เกณฑ์เอง | เสร็จ (กฎ + ค่าธรรมเนียม) |
 | ผู้ช่วยตอบคำถาม (แชทบอท ยังไม่ต่อ AI) | เสร็จ |
+| บัญชีของฉัน ดู/แก้ข้อมูล + เปลี่ยนรหัสผ่าน | เสร็จ |
 | อีเมลแจ้งเตือนเมื่อเจ้าหน้าที่ตัดสิน | เสร็จ |
 
 **เทสต์ backend 194 เคส** (`cd backend && uv run pytest`) รันชุดเต็มหลายรอบไม่ล้ม
@@ -91,7 +92,7 @@ nvm use            # จำเป็น! default ของเครื่อง�
 `/operator/applications/[no]/forms/[code]`
 `/officer/queue` `/officer/applications/[no]` `/officer/applications/[no]/forms/[code]`
 `/officer/applications/[no]/license`
-`/central/overview` `/admin/settings`
+`/central/overview` `/admin/settings` `/account` (บัญชีของฉัน ใช้ได้ทุกบทบาท)
 ทุกกลุ่มบทบาทมี `AppNav` ร่วมกัน เมนูเปลี่ยนตามบทบาท
 
 ### การตัดสินใจเชิงออกแบบที่ต้องรู้ก่อนแก้อะไร
@@ -116,6 +117,11 @@ nvm use            # จำเป็น! default ของเครื่อง�
   และ A06 ร.ร.1 (ประเภท 1/2) — endpoint เดียว `GET /applications/{no}/forms/{code}`
   service เดียว `system_form.py` โครงกระดาษเดียว `SystemFormPaper.tsx`
   ต่างกันแค่เนื้อความใน `FormView.tsx`
+- **หน้าบัญชีของฉันแก้ได้เฉพาะของตัวเอง** `PATCH /auth/me` ใช้ผู้ใช้จากโทเคนเสมอ
+  ไม่รับ id ของใคร **เลขบัตรกับบทบาทแก้ไม่ได้** (เลขบัตร = กลไกกันบัญชีขยะที่เหลืออยู่
+  หลังตัด OTP) เปลี่ยนรหัสผ่านต้องกรอกรหัสเดิม และกรอกผิดก็ลง AuditLog
+  กฎตรวจอีเมล/เบอร์/ชื่อ ใช้ฟังก์ชันชุดเดียวกับตอนสมัครใน `schemas/auth.py`
+  **ห้ามก๊อปกฎไปเขียนซ้ำ** (decisions ข้อ 18)
 - **แผนที่จุดติดต่อเก็บในฐานข้อมูล** `local_authority.map_url` / `contact_point.map_url`
   (migration `c4a91d5e77b2`) ค่าตั้งต้น 19 แห่งอยู่ที่ `seeds/local_authorities.py`
   **ห้ามเขียนลิงก์ลงในคอมโพเนนต์** การแปลงลิงก์เป็น URL สำหรับฝังอยู่ที่ `lib/maps.ts`

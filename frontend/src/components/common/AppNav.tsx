@@ -9,6 +9,7 @@ import {
   LogOut,
   Menu,
   Settings2,
+  UserRound,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -50,6 +51,16 @@ const LINKS: Record<
   ],
 };
 
+/**
+ * หน้าที่ทุกบทบาทใช้ร่วมกัน ต่อท้ายเมนูของบทบาทนั้นเสมอ
+ * วางไว้ท้ายสุดเพราะเป็นงานรอง ไม่ใช่สิ่งที่คนเปิดระบบมาทำเป็นอย่างแรก
+ */
+const ACCOUNT_LINK = {
+  href: "/account",
+  label: "บัญชีของฉัน",
+  icon: UserRound,
+} as const;
+
 const ROLE_LABEL: Record<UserRole, string> = {
   operator: "ผู้ประกอบการ",
   officer: "เจ้าหน้าที่ท้องถิ่น",
@@ -80,7 +91,7 @@ export function AppNav() {
   const router = useRouter();
   const [openMenu, setOpenMenu] = useState(false);
 
-  const links = user ? LINKS[user.role] : [];
+  const links = user ? [...LINKS[user.role], ACCOUNT_LINK] : [];
 
   function signOut() {
     logout();
@@ -110,20 +121,26 @@ export function AppNav() {
           <div className="ml-auto flex items-center gap-2 sm:gap-4">
             {user ? (
               <>
-                <span
-                  className="hidden size-10 items-center justify-center rounded-full bg-brand-100 font-bold text-brand-700 sm:flex"
-                  aria-hidden
+                <Link
+                  href={ACCOUNT_LINK.href}
+                  title="บัญชีของฉัน"
+                  className="hidden items-center gap-3 rounded-xl px-2 py-1.5 transition-colors hover:bg-brand-50 sm:flex"
                 >
-                  {user.full_name.slice(0, 1)}
-                </span>
-                <div className="hidden max-w-48 sm:block">
-                  <p className="truncate text-sm font-semibold">
-                    {user.full_name}
-                  </p>
-                  <p className="text-xs text-ink-muted">
-                    {ROLE_LABEL[user.role]}
-                  </p>
-                </div>
+                  <span
+                    className="grid size-10 place-items-center rounded-full bg-brand-100 font-bold text-brand-700"
+                    aria-hidden
+                  >
+                    {user.full_name.slice(0, 1)}
+                  </span>
+                  <span className="max-w-48">
+                    <span className="block truncate text-sm font-semibold">
+                      {user.full_name}
+                    </span>
+                    <span className="block text-xs text-ink-muted">
+                      {ROLE_LABEL[user.role]}
+                    </span>
+                  </span>
+                </Link>
                 <button
                   type="button"
                   onClick={signOut}

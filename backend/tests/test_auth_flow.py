@@ -181,3 +181,164 @@ def test_duplicate_national_id_is_the_remaining_bot_guard(client):
         json=payload(email="fake@example.com", phone="0899990004", national_id="1111111111111"),
     )
     assert fake_id.status_code == 422
+
+
+# ---------------------------------------------------------------- บัญชีของฉัน
+
+
+def auth_header(client, **overrides) -> dict:
+    """สมัครแล้วคืน header ที่แนบโทเคนของบัญชีนั้น"""
+    res = client.post("/api/v1/auth/register", json=payload(**overrides))
+    assert res.status_code == 201, res.text
+    return {"Authorization": f"Bearer {res.json()['access_token']}"}
+
+
+def test_profile_shows_who_you_are_without_the_full_national_id(client):
+    headers = auth_header(client)
+
+    body = client.get("/api/v1/auth/me", headers=headers).json()
+
+    assert body["full_name"] == "ทดสอบ อัตโนมัติ"
+    assert body["email"] == TEST_EMAIL
+    assert body["role"] == "operator"
+    assert body["created_at"], "ต้องบอกว่าเปิดบัญชีเมื่อใด"
+    assert body["national_id_masked"], "ต้องยืนยันได้ว่าผูกกับเลขบัตรใบไหน"
+    assert TEST_ID not in str(body), "ห้ามส่งเลขบัตรเต็มออกจากระบบไม่ว่ากรณีใด"
+
+
+def test_can_fix_your_own_name_and_contact(client):
+    """คนกรอกชื่อผิดตอนสมัครต้องแก้เองได้ ไม่ใช่ต้องขอให้แก้ในฐานข้อมูลให้"""
+    headers = auth_header(client)
+    new_phone = SPARE_PHONES[0]
+
+    res = client.patch(
+        "/api/v1/auth/me",
+        headers=headers,
+        json={
+            "first_name": "สมชาย",
+            "last_name": "ใจดี",
+            "email": TEST_EMAIL,
+            "phone": f"{new_phone[:3]}-{new_phone[3:6]}-{new_phone[6:]}",
+        },
+    )
+
+    assert res.status_code == 200, res.text
+    assert res.json()["full_name"] == "สมชาย ใจดี"
+    assert res.json()["phone"] == new_phone, "เบอร์ต้องถูกเก็บเป็นตัวเลขล้วนแม้ผู้ใช้ใส่ขีด"
+
+    # เบอร์คือกุญแจเข้าสู่ระบบอีกทางหนึ่ง (M1) แก้แล้วต้องใช้เข้าได้จริง
+    login = client.post(
+        "/api/v1/auth/login", json={"identifier": new_phone, "password": "demo1234"}
+    )
+    assert login.status_code == 200
+
+
+def test_cannot_take_an_email_that_belongs_to_someone_else(client):
+    headers = auth_header(client)
+    other_email = "pytest-user-other@example.com"
+    client.post(
+        "/api/v1/auth/register",
+        json=payload(
+            email=other_email,
+            phone=SPARE_PHONES[1],
+            national_id=make_valid("390990654321"),
+        ),
+    )
+
+    res = client.patch(
+        "/api/v1/auth/me",
+        headers=headers,
+        json={
+            "first_name": "ทดสอบ",
+            "last_name": "อัตโนมัติ",
+            "email": other_email,
+            "phone": TEST_PHONE,
+        },
+    )
+
+    assert res.status_code == 409
+    assert "อีเมล" in res.json()["detail"]
+
+
+def test_profile_update_cannot_touch_role_or_national_id(client):
+    """เลขบัตรคือกลไกกันบัญชีขยะที่เหลืออยู่ และไม่มีใครเลื่อนสิทธิ์ตัวเองได้"""
+    headers = auth_header(client)
+    before = client.get("/api/v1/auth/me", headers=headers).json()
+
+    res = client.patch(
+        "/api/v1/auth/me",
+        headers=headers,
+        json={
+            "first_name": "ทดสอบ",
+            "last_name": "อัตโนมัติ",
+            "email": TEST_EMAIL,
+            "phone": TEST_PHONE,
+            "role": "super_admin",
+            "national_id": make_valid("390990999999"),
+        },
+    )
+
+    assert res.status_code == 200
+    assert res.json()["role"] == "operator"
+    assert res.json()["national_id_masked"] == before["national_id_masked"]
+
+
+def test_changing_password_needs_the_current_one(client):
+    headers = auth_header(client)
+
+    wrong = client.post(
+        "/api/v1/auth/me/password",
+        headers=headers,
+        json={"current_password": "ไม่ใช่รหัสนี้", "new_password": "hotline2569"},
+    )
+    assert wrong.status_code == 400
+    assert "รหัสผ่านเดิม" in wrong.json()["detail"]
+
+    # ความพยายามที่ล้มเหลวต้องถูกบันทึกไว้ เหมือนการล็อกอินไม่สำเร็จ
+    with SessionLocal() as db:
+        denied = db.scalar(
+            select(AuditLog)
+            .where(AuditLog.action == "password.change", AuditLog.outcome == "denied")
+            .order_by(AuditLog.id.desc())
+        )
+    assert denied is not None
+
+    ok = client.post(
+        "/api/v1/auth/me/password",
+        headers=headers,
+        json={"current_password": "demo1234", "new_password": "hotline2569"},
+    )
+    assert ok.status_code == 204
+
+    assert (
+        client.post(
+            "/api/v1/auth/login", json={"identifier": TEST_EMAIL, "password": "demo1234"}
+        ).status_code
+        == 401
+    ), "รหัสเดิมต้องใช้ไม่ได้อีก"
+    assert (
+        client.post(
+            "/api/v1/auth/login", json={"identifier": TEST_EMAIL, "password": "hotline2569"}
+        ).status_code
+        == 200
+    )
+
+
+def test_new_password_must_be_long_enough_and_different(client):
+    headers = auth_header(client)
+
+    short = client.post(
+        "/api/v1/auth/me/password",
+        headers=headers,
+        json={"current_password": "demo1234", "new_password": "sun"},
+    )
+    assert short.status_code == 422
+    assert "8 ตัวอักษร" in short.text
+
+    same = client.post(
+        "/api/v1/auth/me/password",
+        headers=headers,
+        json={"current_password": "demo1234", "new_password": "demo1234"},
+    )
+    assert same.status_code == 400
+    assert "ซ้ำกับรหัสผ่านเดิม" in same.json()["detail"]
