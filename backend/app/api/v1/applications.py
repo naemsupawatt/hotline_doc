@@ -503,6 +503,7 @@ def _detail(db: DbSession, application: Application) -> ApplicationOut:
         documents=presenters.to_checklist(
             docs, local_authority_id=application.local_authority_id, files=files
         ),
+        decision_reason=application.decision_reason,
         license_no=(
             issued.license_no if (issued := license_svc.existing(db, application.id)) else None
         ),

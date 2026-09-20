@@ -121,6 +121,11 @@ class ApplicationOut(BaseModel):
     property: PropertyOut
     documents: DocumentChecklistOut
 
+    # M8/M9: เหตุผลที่เจ้าหน้าที่ระบุตอนตีกลับหรือไม่อนุมัติ
+    # ผู้ยื่นต้องเห็นด้วย ไม่ใช่เห็นแต่ฝั่งเจ้าหน้าที่ ไม่งั้นได้รู้แค่ว่า "ถูกตีกลับ"
+    # แต่ไม่รู้ว่าต้องแก้อะไร แล้วต้องโทรถามเจ้าหน้าที่อยู่ดี
+    decision_reason: str | None = Field(default=None, examples=[None])
+
     # M10: มีค่าเมื่อเจ้าหน้าที่ออกเอกสารแล้ว หน้าจอใช้ขึ้นปุ่ม "พิมพ์เอกสาร"
     license_no: str | None = Field(default=None, examples=[None])
 

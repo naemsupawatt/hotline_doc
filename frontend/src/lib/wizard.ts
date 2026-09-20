@@ -73,6 +73,8 @@ export type ClassifyResult = {
     self_service: RequiredDocument[];
     external: RequiredDocument[];
     needs_local_authority: boolean;
+    /** ขนาดไฟล์สูงสุดต่อไฟล์ — อ่านจากค่าตั้งของเซิร์ฟเวอร์ ห้ามเขียนตัวเลขไว้ในหน้าจอเอง */
+    max_upload_mb: number;
   };
 };
 

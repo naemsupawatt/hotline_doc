@@ -5,6 +5,7 @@
 สองที่นี้จะค่อย ๆ เพี้ยนจากกัน แล้วหน้าจอที่ใช้ทั้งสองจะพังแบบหาสาเหตุยาก
 """
 
+from app.core.config import settings
 from app.models.document import DocumentFile
 from app.models.enums import DocumentCategory, DocumentStatus
 from app.schemas.wizard import (
@@ -109,6 +110,8 @@ def to_checklist(
     return DocumentChecklistOut(
         self_service=self_service,
         external=external,
+        # ค่าเดียวกับที่ services/document.py ใช้ตรวจตอนอัปโหลด หน้าจอจึงไม่ต้องเดา
+        max_upload_mb=settings.MAX_UPLOAD_MB,
         # มีเอกสารที่ต้องไปขอ แต่ยังไม่รู้ว่าเขตไหน -> หน้าจอต้องให้เลือกก่อน
         needs_local_authority=bool(external) and local_authority_id is None,
     )

@@ -270,6 +270,18 @@ def test_unsigned_notice_form_blocks_submitting(client, token, application_no):
     )
 
 
+def test_checklist_tells_the_screen_the_upload_size_limit(client, token, application_no):
+    """หน้าจอกับแชทบอทต้องบอกขนาดไฟล์สูงสุดได้ โดยไม่ต้องเดาหรือเขียนตัวเลขไว้เอง"""
+    body = client.get(f"/api/v1/applications/{application_no}", headers=auth(token)).json()
+    assert body["documents"]["max_upload_mb"] >= 1
+
+
+def test_operator_sees_the_reason_when_an_officer_sends_it_back(client, token, application_no):
+    """ถูกตีกลับแล้วต้องรู้ว่าต้องแก้อะไร ไม่ใช่รู้แค่ว่าถูกตีกลับ"""
+    body = client.get(f"/api/v1/applications/{application_no}", headers=auth(token)).json()
+    assert body["decision_reason"] is None, "ยังไม่มีการพิจารณา จึงยังไม่มีเหตุผล"
+
+
 def test_cannot_upload_a_document_not_required_for_this_property_type(
     client, token, application_no
 ):

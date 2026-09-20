@@ -120,6 +120,10 @@ class DocumentChecklistOut(BaseModel):
             "true = มีเอกสารที่ต้องขอจากหน่วยงานอื่น แต่ผู้ใช้ยังไม่ได้เลือก อปท. หน้าจอต้องให้เลือกก่อนจึงจะบอกจุดติดต่อได้"
         ),
     )
+    max_upload_mb: int = Field(
+        examples=[10],
+        description="ขนาดไฟล์สูงสุดต่อหนึ่งไฟล์ — อ่านจากค่าตั้งของเซิร์ฟเวอร์ ไม่ให้หน้าจอเดาเอง",
+    )
 
 
 class ClassifyResult(BaseModel):

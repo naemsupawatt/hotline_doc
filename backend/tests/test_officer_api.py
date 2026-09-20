@@ -320,6 +320,21 @@ def test_queue_separates_work_by_whose_turn_it_is(client, owner, officer_a):
     assert scope_of("open") and not scope_of("revision")
 
 
+def test_revision_reason_reaches_the_person_who_has_to_fix_it(client, owner, officer_a):
+    """M8/M9: เหตุผลที่ตีกลับต้องไปถึงผู้ยื่น ไม่ใช่เห็นแต่ฝั่งเจ้าหน้าที่"""
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    client.post(
+        f"/api/v1/officer/applications/{no}/decide",
+        headers=auth(officer_a),
+        json={"decision": "request_revision", "reason": "สำเนาทะเบียนบ้านเบลอ อ่านเลขที่บ้านไม่ออก"},
+    )
+
+    body = client.get(f"/api/v1/applications/{no}", headers=auth(owner)).json()
+    assert body["decision_reason"] == "สำเนาทะเบียนบ้านเบลอ อ่านเลขที่บ้านไม่ออก"
+
+
 def test_queue_rejects_an_unknown_scope(client, officer_a):
     res = client.get("/api/v1/officer/queue?scope=mystery", headers=auth(officer_a))
     assert res.status_code == 422

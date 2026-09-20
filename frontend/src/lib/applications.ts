@@ -80,6 +80,8 @@ export type Application = {
   fee: ClassifyResult["fee"];
   property: ApplicationProperty;
   documents: ClassifyResult["documents"];
+  /** M8/M9: เหตุผลที่เจ้าหน้าที่ตีกลับหรือไม่อนุมัติ — ผู้ยื่นต้องรู้ว่าต้องแก้อะไร */
+  decision_reason: string | null;
   /** M10: มีค่าเมื่อเจ้าหน้าที่ออกเอกสารแล้ว */
   license_no: string | null;
   /** M6: หน้าจอใช้สองค่านี้ตัดสินว่าจะเปิดปุ่ม "ยื่นคำขอ" หรือไม่ */
