@@ -172,6 +172,18 @@ function Row({ label, value }: { label: string; value: string }) {
 
 /* --------------------------------------------------------- ตรวจรายฉบับ */
 
+/**
+ * ผลตรวจรายฉบับที่เจ้าหน้าที่กดได้
+ *
+ * **ไม่มีปุ่ม "ไม่ผ่าน" โดยตั้งใจ** (มติทีม) แม้ `fail` จะยังมีอยู่ในชนิดข้อมูลและ
+ * ฝั่งเซิร์ฟเวอร์ยังรับอยู่ เพราะผลลัพธ์ของมันเหมือน "ขอแก้ไข" ทุกประการ —
+ * เอกสารกลับไปสถานะ revision_requested ให้ผู้ยื่นส่งไฟล์ใหม่เหมือนกัน
+ * (ดู DOCUMENT_STATUS_OF ใน backend/app/services/officer.py) ปุ่มสองปุ่มที่ทำ
+ * สิ่งเดียวกันแต่ใช้คำต่างกัน ทำให้เจ้าหน้าที่ลังเลว่าควรกดอันไหน และทำให้ผู้ยื่น
+ * เห็นคำว่า "ไม่ผ่าน" ทั้งที่แก้ไฟล์แล้วไปต่อได้ตามปกติ
+ *
+ * การปฏิเสธคำขอทั้งใบยังทำได้ที่ปุ่ม "ไม่อนุมัติ" ระดับคำขอเหมือนเดิม
+ */
 const REVIEW_BUTTONS: { value: ReviewDecision; label: string; icon: typeof Check; cls: string }[] =
   [
     { value: "pass", label: "ผ่าน", icon: Check, cls: "bg-success-bg text-success-fg" },
@@ -181,7 +193,6 @@ const REVIEW_BUTTONS: { value: ReviewDecision; label: string; icon: typeof Check
       icon: PencilLine,
       cls: "bg-warn-bg text-warn-fg",
     },
-    { value: "fail", label: "ไม่ผ่าน", icon: X, cls: "bg-danger-bg text-danger-fg" },
   ];
 
 function DocumentReviewRow({
@@ -292,7 +303,7 @@ function DocumentReviewRow({
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               maxLength={1000}
-              placeholder="ระบุเหตุผล (บังคับเมื่อขอแก้ไขหรือไม่ผ่าน)"
+              placeholder="ระบุเหตุผล (บังคับเมื่อขอให้แก้ไข)"
               className="min-h-10 w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink placeholder:text-ink-muted/70"
             />
           </label>
