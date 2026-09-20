@@ -22,27 +22,38 @@ const APP: Record<ApplicationStatus, { label: string; cls: string; dot: string }
   needs_revision: { label: "รอผู้ยื่นแก้ไข",     cls: "bg-warn-bg text-warn-fg",       dot: "bg-warn-fg" },
   approved:       { label: "อนุมัติแล้ว",       cls: "bg-success-bg text-success-fg", dot: "bg-success-fg" },
   rejected:       { label: "ไม่อนุมัติ",        cls: "bg-danger-bg text-danger-fg",   dot: "bg-danger-fg" },
-  license_issued: { label: "ออกใบอนุญาตแล้ว",   cls: "bg-brand-50 text-brand-700",    dot: "bg-brand-500" },
+  // "ออกเอกสารแล้ว" ไม่ใช่ "ออกใบอนุญาตแล้ว" เพราะสถานะนี้ครอบทั้งใบอนุญาต
+  // และหนังสือรับรองการแจ้ง (license.kind) คำขอที่ไม่เข้าข่ายโรงแรมไม่ได้ใบอนุญาต
+  license_issued: { label: "ออกเอกสารแล้ว",     cls: "bg-brand-50 text-brand-700",    dot: "bg-brand-500" },
 };
 
-type Props =
+/** md ใช้ตอนป้ายอยู่คู่กับหัวข้อใหญ่ เช่นหัวการ์ดในรายการคำขอ */
+const SIZE = {
+  sm: { pill: "gap-1.5 px-2.5 py-1 text-xs", dot: "size-1.5" },
+  md: { pill: "gap-2 px-3 py-1.5 text-sm", dot: "size-2" },
+} as const;
+
+type Props = { size?: keyof typeof SIZE } & (
   | { kind?: "document"; status: DocumentStatus; className?: string }
-  | { kind: "application"; status: ApplicationStatus; className?: string };
+  | { kind: "application"; status: ApplicationStatus; className?: string }
+);
 
 export function StatusPill(props: Props) {
   const map = props.kind === "application" ? APP : DOC;
   const s = (map as Record<string, { label: string; cls: string; dot: string }>)[props.status];
   if (!s) return null;
+  const size = SIZE[props.size ?? "sm"];
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+        "inline-flex items-center rounded-full font-medium",
+        size.pill,
         s.cls,
         props.className,
       )}
     >
       {/* NFR Accessibility: มีจุดสี แต่ก็ต้องมีข้อความกำกับเสมอ ไม่ใช้สีสื่อความหมายลำพัง */}
-      <span className={cn("size-1.5 rounded-full", s.dot)} aria-hidden />
+      <span className={cn("rounded-full", size.dot, s.dot)} aria-hidden />
       {s.label}
     </span>
   );
