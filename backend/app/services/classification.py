@@ -184,14 +184,15 @@ def required_documents(
         .options(
             selectinload(DocumentRequirement.document_type).selectinload(
                 DocumentType.issuing_agency
-            )
+            ),
+            selectinload(DocumentRequirement.document_type).selectinload(DocumentType.parent),
         )
         .join(DocumentType)
         .where(
             DocumentRequirement.property_type_id == property_type_id,
             DocumentType.is_active,
         )
-        .order_by(DocumentType.display_order)
+        .order_by(DocumentRequirement.display_order)
     ).all()
 
     contacts = _contacts_for(db, local_authority_id)

@@ -214,19 +214,33 @@ def open_application(client, owner_token, code: str, rooms: int = 6, guests: int
 
 
 def fill_and_submit(client, owner_token, no: str) -> None:
-    for code in ["A02", "A03", "B01"]:
-        client.post(
-            f"/api/v1/applications/{no}/documents/{code}",
-            headers=auth(owner_token),
-            files={"file": ("doc.pdf", PDF, "application/pdf")},
+    """แนบเอกสารบังคับให้ครบตามที่ API บอก แล้วยื่น
+
+    อ่านรายการจากคำขอจริงแทนการเขียนรหัสเอกสารตายตัวไว้ในเทสต์
+    เพราะแต่ละประเภทที่พักใช้รายการคนละชุด และรายการแก้ได้จากหน้า Super Admin
+    ถ้าเขียนตายตัว เทสต์จะล้มทุกครั้งที่ทีมเพิ่มเอกสารใหม่ทั้งที่ระบบยังถูกต้อง
+    """
+    detail = client.get(f"/api/v1/applications/{no}", headers=auth(owner_token)).json()
+    documents = detail["documents"]["self_service"] + detail["documents"]["external"]
+
+    for doc in documents:
+        # ฉบับที่ไม่บังคับไม่ต้องแนบ ส่วนแบบฟอร์มในระบบต้องแนบ "รูปลายมือชื่อ"
+        # ซึ่งเข้าเงื่อนไขเดียวกับเอกสารที่รับเฉพาะรูปภาพ จึงไม่ต้องแยกเคส
+        if not doc["is_mandatory"]:
+            continue
+        is_pdf_only = doc["accepted_mime"] == ["application/pdf"]
+        payload = (
+            ("doc.pdf", PDF, "application/pdf") if is_pdf_only else ("p.png", PNG, "image/png")
         )
-    for code in ["A04", "A05"]:
-        client.post(
-            f"/api/v1/applications/{no}/documents/{code}",
+        res = client.post(
+            f"/api/v1/applications/{no}/documents/{doc['code']}",
             headers=auth(owner_token),
-            files={"file": ("p.png", PNG, "image/png")},
+            files={"file": payload},
         )
-    client.post(f"/api/v1/applications/{no}/submit", headers=auth(owner_token))
+        assert res.status_code == 201, f"{doc['code']}: {res.text}"
+
+    submitted = client.post(f"/api/v1/applications/{no}/submit", headers=auth(owner_token))
+    assert submitted.status_code == 200, submitted.text
 
 
 def file_ids(client, officer_token, no: str) -> dict[str, int]:
@@ -247,6 +261,77 @@ def test_queue_shows_only_applications_in_my_authority(client, owner, officer_a)
 
     assert mine in numbers
     assert other not in numbers
+
+
+def test_approved_application_stays_in_the_queue_until_the_document_is_issued(
+    client, owner, officer_a
+):
+    """บั๊กที่เคยเจอ: พออนุมัติแล้วคำขอหายจากคิวทันที
+
+    ผลคือเจ้าหน้าที่กดปุ่ม "ออกใบอนุญาต" ไม่ได้อีกเลย เพราะไม่มีทางกลับไปที่
+    คำขอนั้นผ่านหน้าจอ ทำให้ M10 เข้าไม่ถึง
+    คำขอที่อนุมัติแล้วยังค้างงานอยู่หนึ่งขั้น จึงต้องอยู่ในคิวต่อ
+    """
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    def in_queue(scope: str) -> str | None:
+        rows = client.get(f"/api/v1/officer/queue?scope={scope}", headers=auth(officer_a)).json()
+        return next((r["status"] for r in rows if r["application_no"] == no), None)
+
+    assert in_queue("open") == "submitted"
+
+    approve_fully(client, owner, officer_a, no)
+    assert in_queue("open") == "approved", "อนุมัติแล้วต้องยังอยู่ในคิว รอออกเอกสาร"
+    assert in_queue("closed") is None
+
+    issue(client, officer_a, no)
+    assert in_queue("open") is None, "ออกเอกสารแล้วถึงจะออกจากคิว"
+    assert in_queue("closed") == "license_issued"
+    assert in_queue("all") == "license_issued"
+
+
+def test_queue_separates_work_by_whose_turn_it_is(client, owner, officer_a):
+    """แท็บ "รอฉันดำเนินการ" กับ "รอผู้ยื่นแก้ไข" ต้องแยกกัน
+
+    คำขอที่ส่งกลับให้แก้ไขไม่ใช่งานของเจ้าหน้าที่แล้ว จนกว่าผู้ยื่นจะส่งกลับมา
+    ถ้าปนกันอยู่คิวเดียว เจ้าหน้าที่จะแยกไม่ออกว่าอันไหนต้องลงมือเอง
+    """
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    def scope_of(scope: str) -> bool:
+        rows = client.get(f"/api/v1/officer/queue?scope={scope}", headers=auth(officer_a)).json()
+        return any(r["application_no"] == no for r in rows)
+
+    assert scope_of("open") and not scope_of("revision")
+
+    client.post(
+        f"/api/v1/officer/applications/{no}/decide",
+        headers=auth(officer_a),
+        json={"decision": "request_revision", "reason": "ขอเอกสารเพิ่ม"},
+    )
+    assert scope_of("revision"), "ส่งกลับแก้ไขแล้วต้องไปอยู่แท็บรอผู้ยื่น"
+    assert not scope_of("open"), "และต้องไม่ค้างอยู่ในคิวงานของเจ้าหน้าที่"
+    assert scope_of("all")
+
+    # ผู้ยื่นส่งกลับมาแล้วต้องเด้งกลับเข้าคิวเจ้าหน้าที่
+    client.post(f"/api/v1/applications/{no}/submit", headers=auth(owner))
+    assert scope_of("open") and not scope_of("revision")
+
+
+def test_queue_rejects_an_unknown_scope(client, officer_a):
+    res = client.get("/api/v1/officer/queue?scope=mystery", headers=auth(officer_a))
+    assert res.status_code == 422
+
+
+def test_queue_never_shows_drafts(client, owner, officer_a):
+    """ร่างคือคำขอที่ผู้ยื่นยังไม่ได้ส่งมา เจ้าหน้าที่ไม่ควรเห็นไม่ว่ากลุ่มไหน"""
+    draft = open_application(client, owner, "PKT-CITY")
+
+    for scope in ("open", "closed", "all"):
+        rows = client.get(f"/api/v1/officer/queue?scope={scope}", headers=auth(officer_a)).json()
+        assert draft not in [r["application_no"] for r in rows], scope
 
 
 def test_t09_opening_another_authoritys_application_is_denied_and_logged(client, owner, officer_a):
@@ -298,8 +383,9 @@ def test_officer_can_open_documents_in_scope_but_not_across_authorities(client, 
     fill_and_submit(client, owner, mine)
     ids = file_ids(client, officer_a, mine)
 
+    # ใช้ B01 เพราะรับเฉพาะ PDF จึงรู้แน่ว่าไฟล์ที่แนบไว้คือไฟล์ไหน
     opened = client.get(
-        f"/api/v1/officer/applications/{mine}/documents/file/{ids['A02']}",
+        f"/api/v1/officer/applications/{mine}/documents/file/{ids['B01']}",
         headers=auth(officer_a),
     )
     assert opened.status_code == 200
@@ -432,7 +518,8 @@ def test_full_review_to_approval_writes_the_whole_trail(client, owner, officer_a
                 )
             ).all()
         )
-        assert len(reviews) == 5, "ต้องมีผลตรวจรายฉบับครบทุกฉบับ"
+        # 5 ฉบับบังคับ + ลายมือชื่อในแบบหนังสือแจ้งฯ ซึ่งก็ต้องถูกตรวจเหมือนกัน
+        assert len(reviews) == 6, "ต้องมีผลตรวจรายฉบับครบทุกฉบับ"
         assert all(r.reviewed_at is not None for r in reviews)
 
 
@@ -481,6 +568,14 @@ def test_rejecting_requires_a_reason(client, owner, officer_a):
 # ---------------------------------------------------------------- M10 ใบอนุญาต
 
 
+def issue(client, officer, no: str, *, signature=PNG, mime="image/png"):
+    """ออกเอกสารต้องแนบลายมือชื่อผู้ลงนามเสมอ (M10)"""
+    files = {"signature": ("sign.png", signature, mime)} if signature is not None else None
+    return client.post(
+        f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer), files=files
+    )
+
+
 def approve_fully(client, owner, officer, no: str) -> None:
     for file_id in file_ids(client, officer, no).values():
         client.post(
@@ -495,6 +590,38 @@ def approve_fully(client, owner, officer, no: str) -> None:
     )
 
 
+def test_issuing_requires_the_signature_of_the_person_who_signs(client, owner, officer_a):
+    """เอกสารที่ไม่มีใครลงนามคือเอกสารที่ใช้ไม่ได้ — กติกาเดียวกับฝั่งผู้ยื่น"""
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+    approve_fully(client, owner, officer_a, no)
+
+    blank = issue(client, officer_a, no, signature=b"")
+    assert blank.status_code == 422
+    assert "ลงลายมือชื่อ" in blank.json()["detail"]
+
+    wrong_type = issue(client, officer_a, no, signature=PDF, mime="application/pdf")
+    assert wrong_type.status_code == 422
+
+    body = client.get(f"/api/v1/officer/applications/{no}", headers=auth(officer_a)).json()
+    assert body["license_no"] is None, "ยังไม่ควรมีเอกสารออกไปจนกว่าจะลงนาม"
+
+
+def test_issued_document_keeps_the_signature_for_the_printed_page(client, owner, officer_a):
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+    approve_fully(client, owner, officer_a, no)
+    assert issue(client, officer_a, no).status_code == 200
+
+    body = client.get(f"/api/v1/applications/{no}/license", headers=auth(owner)).json()
+    assert body["has_issuer_signature"] is True
+
+    # ผู้ยื่นต้องโหลดรูปมาแสดงบนหน้าพิมพ์ของตัวเองได้
+    img = client.get(f"/api/v1/applications/{no}/license/signature", headers=auth(owner))
+    assert img.status_code == 200
+    assert img.headers["content-type"] == "image/png"
+
+
 def test_m10_notice_receipt_for_properties_that_need_no_licence(client, owner, officer_a):
     """ที่พักที่ไม่เข้าข่ายโรงแรมก็ต้องได้เอกสารที่พิมพ์ได้พร้อมเลขอ้างอิง
 
@@ -505,9 +632,7 @@ def test_m10_notice_receipt_for_properties_that_need_no_licence(client, owner, o
     fill_and_submit(client, owner, no)
     approve_fully(client, owner, officer_a, no)
 
-    issued = client.post(
-        f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer_a)
-    )
+    issued = issue(client, officer_a, no)
     assert issued.status_code == 200, issued.text
     assert issued.json()["status"] == "license_issued"
 
@@ -522,9 +647,9 @@ def test_m10_notice_receipt_for_properties_that_need_no_licence(client, owner, o
 def test_m10_licence_snapshots_the_fee_that_applied_at_issue_time(client, owner, officer_a):
     """ข้อควรคิดข้อ 1 ของโจทย์ข้อ 8: ใบอนุญาตต้องคงอัตราเดิมไว้เสมอ"""
     no = open_application(client, owner, "PKT-CITY", rooms=20, guests=60)
-    client.post(f"/api/v1/applications/{no}/submit", headers=auth(owner))
+    fill_and_submit(client, owner, no)
     approve_fully(client, owner, officer_a, no)
-    client.post(f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer_a))
+    issue(client, officer_a, no)
 
     doc = client.get(f"/api/v1/applications/{no}/license", headers=auth(owner)).json()
     assert doc["kind"] == "license"
@@ -544,16 +669,14 @@ def test_cannot_issue_before_approval_or_twice(client, owner, officer_a):
     no = open_application(client, owner, "PKT-CITY")
     fill_and_submit(client, owner, no)
 
-    too_early = client.post(
-        f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer_a)
-    )
+    too_early = issue(client, officer_a, no)
     assert too_early.status_code == 422
     assert "อนุมัติ" in too_early.json()["detail"]
 
     approve_fully(client, owner, officer_a, no)
-    client.post(f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer_a))
+    issue(client, officer_a, no)
 
-    again = client.post(f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer_a))
+    again = issue(client, officer_a, no)
     assert again.status_code == 422
     assert "ออกเอกสารไปแล้ว" in again.json()["detail"]
 
@@ -562,7 +685,7 @@ def test_license_is_only_visible_to_its_owner(client, owner, officer_a):
     no = open_application(client, owner, "PKT-CITY")
     fill_and_submit(client, owner, no)
     approve_fully(client, owner, officer_a, no)
-    client.post(f"/api/v1/officer/applications/{no}/issue-license", headers=auth(officer_a))
+    issue(client, officer_a, no)
 
     stranger, _ = _register(client, "stranger")
     assert (

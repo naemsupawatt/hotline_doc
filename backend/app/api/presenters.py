@@ -48,11 +48,11 @@ def to_file_out(row: DocumentFile) -> UploadedFileOut:
 def _status_of(doc, files: list[DocumentFile]) -> str:
     """สถานะรายฉบับที่หน้าจอเอาไปแปลงเป็นสี
 
-    แบบฟอร์มที่กรอกในระบบถือว่าพร้อมตั้งแต่เปิดคำขอ เพราะข้อมูลที่ใช้
-    ถูกกรอกครบไปแล้ว ไม่มีไฟล์ให้แนบ จึงไม่ควรค้างเป็น "ยังไม่ได้อัปโหลด"
+    แบบฟอร์มที่ระบบกรอกให้ก็ใช้กติกาเดียวกับเอกสารอื่น: ยังไม่มีไฟล์ = ยังไม่ครบ
+    เพราะไฟล์ของแบบฟอร์มคือลายมือชื่อ ซึ่งบังคับต้องมีก่อนยื่น (M6)
+    ถ้าปล่อยให้ขึ้นว่า "อัปโหลดแล้ว" ทั้งที่ยังไม่ได้เซ็น สถานะจะขัดกับปุ่มยื่น
+    ที่ยังกดไม่ได้ และผู้ใช้จะหาไม่เจอว่าติดตรงไหน
     """
-    if doc.is_system_form:
-        return DocumentStatus.UPLOADED
     if not files:
         return DocumentStatus.NOT_UPLOADED
     # ทุกไฟล์ของเอกสารฉบับเดียวกันใช้สถานะเดียวกัน ใช้ของไฟล์แรกเป็นตัวแทน
@@ -65,6 +65,7 @@ def to_document_out(
     doc = item.document_type
     attached = files or []
     return DocumentOut(
+        parent_code=doc.parent.code if doc.parent else None,
         status=_status_of(doc, attached),
         files=[to_file_out(f) for f in attached],
         code=doc.code,
@@ -168,6 +169,7 @@ def to_license_out(db, row, application, prop, authority, holder, issuer):
         is_revoked=row.is_revoked,
         fee_amount=float(row.fee_amount) if row.fee_amount is not None else None,
         fee_currency="THB" if row.fee_amount is not None else None,
+        has_issuer_signature=bool(row.issuer_signature_path),
         issued_by_name=issuer.full_name if issuer else "-",
         local_authority_name=authority.name if authority else "-",
         property=to_property_out(prop, authority.name if authority else "-"),

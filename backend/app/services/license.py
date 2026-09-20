@@ -12,6 +12,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -23,6 +24,7 @@ from app.models.enums import ApplicationStatus, LicenseKind
 from app.models.license import License
 from app.models.user import User
 from app.services import classification as classify_svc
+from app.services import document as doc_svc
 
 BUDDHIST_OFFSET = 543
 LICENSE_PREFIX = "HL"  # ใบอนุญาต
@@ -49,15 +51,32 @@ def _reference_no(kind: LicenseKind, row_id: int) -> str:
     return f"{prefix}-{year}-{row_id:06d}"
 
 
+def signature_dir() -> Path:
+    """เก็บแยกจากโฟลเดอร์ของคำขอ เพราะเป็นไฟล์ของเอกสารที่ระบบออก ไม่ใช่ไฟล์ที่ผู้ยื่นส่งมา"""
+    return doc_svc.storage_root() / "licenses"
+
+
+def signature_path(row: License) -> Path | None:
+    if not row.issuer_signature_path:
+        return None
+    return doc_svc.storage_root() / row.issuer_signature_path
+
+
 def issue(
     db: Session,
     *,
     application: Application,
     officer: User,
     property_type: PropertyType,
+    signature_png: bytes,
     ip: str | None = None,
 ) -> tuple[Issued | None, str | None]:
-    """ออกเอกสารสิทธิ์ให้คำขอที่อนุมัติแล้ว"""
+    """ออกเอกสารสิทธิ์ให้คำขอที่อนุมัติแล้ว พร้อมลายมือชื่อผู้ลงนาม
+
+    ลายมือชื่อเป็นส่วนหนึ่งของการออกเอกสาร ไม่ใช่ขั้นตอนแยก เพราะเอกสารที่ยัง
+    ไม่มีใครลงนามคือเอกสารที่ใช้ไม่ได้ — กติกาเดียวกับที่ผู้ยื่นต้องลงลายมือชื่อ
+    ในแบบฟอร์มก่อนยื่น (M6)
+    """
     # ตรวจ "ออกไปแล้วหรือยัง" ก่อนตรวจสถานะเสมอ
     # เพราะพอออกเอกสารแล้วสถานะจะกลายเป็น license_issued ถ้าเรียงกลับกัน
     # การกดซ้ำจะได้ข้อความว่า "ยังไม่อนุมัติ" ซึ่งไม่ใช่เหตุผลจริงและชวนงง
@@ -96,6 +115,13 @@ def issue(
     db.add(row)
     db.flush()
     row.license_no = _reference_no(kind, row.id)
+
+    # ตั้งชื่อไฟล์ด้วยเลขเอกสารซึ่งไม่ซ้ำอยู่แล้ว จึงไม่ต้องสุ่มชื่อเหมือนไฟล์ที่ผู้ใช้อัปโหลด
+    # (ชื่อไฟล์ที่ผู้ใช้ตั้งเองเป็นช่องทาง path traversal ส่วนเลขนี้ระบบเป็นคนออก)
+    folder = signature_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{row.license_no}.png").write_bytes(signature_png)
+    row.issuer_signature_path = f"licenses/{row.license_no}.png"
 
     previous = application.status
     application.status = ApplicationStatus.LICENSE_ISSUED

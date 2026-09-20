@@ -57,7 +57,13 @@ class DocumentType(Base, TimestampMixin):
     display_order: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
 
+    # เอกสารย่อยที่แนบ "อยู่ใต้" แบบฟอร์มอีกฉบับ เช่น หนังสือรับรองนิติบุคคล
+    # ที่เป็นช่องแนบอยู่ในแบบ ร.ร.1 ไม่ใช่เอกสารลอย ๆ ในรายการ
+    # หน้าจอใช้ค่านี้จัดกลุ่มให้แสดงซ้อนใต้ฉบับแม่
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("document_type.id"))
+
     issuing_agency: Mapped[IssuingAgency | None] = relationship()
+    parent: Mapped[DocumentType | None] = relationship(remote_side="DocumentType.id")
 
     @property
     def accepted_mime_list(self) -> list[str]:
@@ -81,6 +87,15 @@ class DocumentRequirement(Base, TimestampMixin):
     property_type_id: Mapped[int] = mapped_column(ForeignKey("property_type.id"), nullable=False)
     document_type_id: Mapped[int] = mapped_column(ForeignKey("document_type.id"), nullable=False)
     is_mandatory: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
+
+    # ลำดับการแสดงในรายการของประเภทนี้
+    #
+    # อยู่ที่นี่ ไม่ใช่ที่ document_type เพราะเอกสารฉบับเดียวกันถูกใช้หลายประเภท
+    # แต่ลำดับในแต่ละรายการไม่เหมือนกัน เช่น "เอกสารสิทธิ์ที่ดิน" อยู่ลำดับ 4
+    # ของที่พักที่ไม่เข้าข่าย แต่อยู่ลำดับ 6 ของโรงแรมซึ่งมีแบบ ร.ร.1 นำหน้า
+    # ลำดับจึงเป็นคุณสมบัติของ "รายการ" ไม่ใช่ของ "เอกสาร" (3NF)
+    display_order: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+
     note: Mapped[str | None] = mapped_column(Text())
 
     document_type: Mapped[DocumentType] = relationship()

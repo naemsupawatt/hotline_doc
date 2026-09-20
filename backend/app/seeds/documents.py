@@ -1,8 +1,10 @@
 """เอกสารประกอบคำขอ + หน่วยงานที่ออกเอกสาร + จุดติดต่อ (M3, M4)
 
-รอบนี้ครอบเฉพาะเส้น "ไม่เข้าข่ายโรงแรม" ตามที่ทีมตกลงว่าทำกรณีนี้ก่อน
-ประเภทที่ 1 / ประเภทที่ 2 จะเพิ่มรายการเอกสารของตัวเองในไฟล์นี้ทีหลัง
-โดยไม่ต้องแก้โค้ดส่วนอื่นเลย เพราะทุกอย่างอ่านจากตาราง
+ครอบทั้งสามเส้น: ไม่เข้าข่ายโรงแรม, ที่พักแรมประเภทที่ 1 และประเภทที่ 2
+
+เอกสารบางฉบับใช้ร่วมกันหลายประเภท (เอกสารสิทธิ์ที่ดิน ภาพถ่ายอาคาร รูปถ่ายผู้แจ้ง)
+จึงประกาศ DocumentType ครั้งเดียวแล้วผูกเข้ากับแต่ละประเภทผ่าน DOCUMENT_REQUIREMENTS
+ลำดับการแสดงอยู่ที่ requirement เพราะแต่ละรายการเรียงไม่เหมือนกัน
 
 ย้ำเหมือน classification.py: ไฟล์นี้คือค่าตั้งต้นสำหรับ import ครั้งแรกเท่านั้น
 หลังจากนี้ Super Admin แก้ผ่านหน้าจอได้ (US-09) โค้ดส่วนอื่นห้ามอ่านจากไฟล์นี้
@@ -96,6 +98,63 @@ DOCUMENT_TYPES: list[dict] = [
         "accepted_mime": IMAGE_ONLY,
         "display_order": 6,
     },
+    # ---------------- เฉพาะที่พักแรมประเภทที่ 1 และ 2 (เข้าข่ายโรงแรม) ----------------
+    {
+        "code": "A06",
+        "name_th": "แบบ ร.ร.1",
+        "description": (
+            "คำขอรับใบอนุญาตประกอบธุรกิจโรงแรม กรอกในระบบได้เลย ระบบดึงชื่อโรงแรมและที่ตั้งจากข้อมูลที่พักที่กรอกไว้"
+        ),
+        "category": DocumentCategory.SELF,
+        "is_system_form": True,
+        "accepted_mime": "image/png",  # ลายมือชื่อที่วาดบนจอ
+        "display_order": 10,
+    },
+    # สามฉบับถัดไปเป็นช่องแนบ "ที่อยู่ในแบบ ร.ร.1" ไม่ใช่รายการลอย ๆ
+    # ผู้ยื่นติ๊กว่ามีฉบับไหนแล้วค่อยแนบ จึงไม่บังคับทุกฉบับ
+    {
+        "code": "A07",
+        "name_th": "หนังสือรับรองการจดทะเบียนนิติบุคคล",
+        "description": "แนบเมื่อผู้ขออนุญาตเป็นนิติบุคคล บุคคลธรรมดาไม่ต้องแนบ",
+        "category": DocumentCategory.SELF,
+        "parent": "A06",
+        "accepted_mime": PDF_ONLY,
+        "display_order": 11,
+    },
+    {
+        "code": "A08",
+        "name_th": "สำเนาทะเบียนบ้านโรงแรม",
+        "description": "สำเนาทะเบียนบ้านของอาคารที่ใช้ประกอบธุรกิจโรงแรม",
+        "category": DocumentCategory.SELF,
+        "parent": "A06",
+        "accepted_mime": PDF_ONLY,
+        "display_order": 12,
+    },
+    {
+        "code": "A09",
+        "name_th": "หลักฐานแสดงความเป็นเจ้าของสถานที่",
+        "description": "เช่น สัญญาเช่า หนังสือยินยอมให้ใช้สถานที่ หรือเอกสารสิทธิ์",
+        "category": DocumentCategory.SELF,
+        "parent": "A06",
+        "accepted_mime": PDF_ONLY,
+        "display_order": 13,
+    },
+    {
+        "code": "B02",
+        "name_th": "หนังสือรับรองการดัดแปลงอาคาร (อ.5)",
+        "description": (
+            "ต้องยื่นขอที่กองช่างของ อปท. ที่โรงแรมตั้งอยู่ แล้วนำฉบับที่เจ้าหน้าที่ลงนามแล้วมาอัปโหลดเข้าระบบ"
+        ),
+        "category": DocumentCategory.EXTERNAL,
+        "issuing_agency": "LOCAL-WORKS",
+        "preparation_note": (
+            "เตรียมไปที่หน่วยงาน: ใบอนุญาตก่อสร้างอาคารเดิม, แบบแปลนอาคารที่ดัดแปลง, "
+            "สำเนาเอกสารสิทธิ์ที่ดิน และรูปถ่ายอาคารก่อน–หลังดัดแปลง"
+        ),
+        "estimated_days": 45,
+        "accepted_mime": PDF_ONLY,
+        "display_order": 14,
+    },
 ]
 
 
@@ -106,13 +165,49 @@ DOCUMENT_TYPES: list[dict] = [
 # แต่ต้องดำเนินการแจ้งตามแนวทางที่กำหนด ระบบต้องแสดงรายการเอกสารและ
 # หน่วยงานที่ต้องติดต่อ" — เส้นนี้จึงมีรายการเอกสารเหมือนกรณีอื่น
 # ---------------------------------------------------------------------------
+NOT_HOTEL_DOCUMENTS = [
+    ("A01", True),
+    ("A02", True),
+    ("B01", True),
+    ("A03", True),
+    ("A04", True),
+    ("A05", True),
+]
+
+# ประเภทที่ 1 กับประเภทที่ 2 ใช้รายการเอกสารชุดเดียวกัน
+# ต่างกันแค่ค่าธรรมเนียมตามตารางข้อ 4 (มี/ไม่มีห้องอาหาร) ซึ่งไม่กระทบเอกสาร
+#
+# สามฉบับที่ is_mandatory=False คือช่องแนบในแบบ ร.ร.1 ที่ผู้ยื่นติ๊กว่ามีก่อน
+# จึงต้องไม่บล็อกการยื่น (M6) เพราะบางฉบับไม่มีจริงตามรูปแบบกิจการ
+HOTEL_DOCUMENTS = [
+    ("A06", True),
+    ("A07", False),
+    ("A08", False),
+    ("A09", False),
+    ("B02", True),
+    ("A03", True),
+    ("A04", True),
+    ("A05", True),
+]
+
+
+def _requirements(property_type: str, items: list[tuple[str, bool]]) -> list[dict]:
+    """ลำดับการแสดงคือลำดับที่เขียนไว้ในลิสต์ ไม่ต้องนับเลขเอง"""
+    return [
+        {
+            "property_type": property_type,
+            "document_type": code,
+            "is_mandatory": mandatory,
+            "display_order": order,
+        }
+        for order, (code, mandatory) in enumerate(items, start=1)
+    ]
+
+
 DOCUMENT_REQUIREMENTS: list[dict] = [
-    {"property_type": "not_hotel", "document_type": "A01", "is_mandatory": True},
-    {"property_type": "not_hotel", "document_type": "A02", "is_mandatory": True},
-    {"property_type": "not_hotel", "document_type": "B01", "is_mandatory": True},
-    {"property_type": "not_hotel", "document_type": "A03", "is_mandatory": True},
-    {"property_type": "not_hotel", "document_type": "A04", "is_mandatory": True},
-    {"property_type": "not_hotel", "document_type": "A05", "is_mandatory": True},
+    *_requirements("not_hotel", NOT_HOTEL_DOCUMENTS),
+    *_requirements("type_1", HOTEL_DOCUMENTS),
+    *_requirements("type_2", HOTEL_DOCUMENTS),
 ]
 
 

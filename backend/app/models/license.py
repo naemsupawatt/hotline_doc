@@ -89,4 +89,8 @@ class License(Base, TimestampMixin):
     valid_until: Mapped[date | None] = mapped_column(Date)  # S4: เตือนก่อนหมดอายุ
     is_revoked: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
 
+    # ลายมือชื่อเจ้าหน้าที่ผู้ลงนาม เก็บเป็นไฟล์รูปเหมือน document_file.stored_path
+    # ว่างได้เฉพาะใบที่ออกก่อนระบบจะเก็บลายมือชื่อ (ดู migration 5b1e70c4a9d2)
+    issuer_signature_path: Mapped[str | None] = mapped_column(String(255))
+
     fee_schedule: Mapped[FeeSchedule | None] = relationship()

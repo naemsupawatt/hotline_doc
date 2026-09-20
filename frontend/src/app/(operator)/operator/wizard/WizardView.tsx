@@ -11,6 +11,7 @@ import {
   PencilLine,
   RotateCcw,
   Upload,
+  Users,
 } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
@@ -31,6 +32,7 @@ import {
   startApplication,
 } from "@/lib/applications";
 import { getUser } from "@/lib/auth";
+import { groupByParent } from "@/lib/documents";
 import {
   type ClassifyResult,
   type LocalAuthority,
@@ -85,9 +87,15 @@ export function WizardView() {
         description="ตอบข้อมูลเบื้องต้น เพื่อรับแนวทางการดำเนินการตามกฎหมายอย่างเข้าใจง่าย"
       />
 
-      <Stepper steps={STEPS} current={result ? 1 : 0} className="mt-8 max-w-xl rounded-2xl border border-line bg-surface px-5 py-5" />
+      {/* กว้างเท่าเนื้อหาด้านล่าง ไม่งั้นการ์ดแคบ ๆ ลอยอยู่ซ้ายจะดูไม่เข้าพวก
+          และจำกัดความกว้างในตัวไว้ ไม่ให้สองขั้นถ่างออกจนห่างกันเกินไปบนจอกว้าง */}
+      <div className="mt-8 rounded-2xl border border-line bg-surface px-5 py-5">
+        <Stepper steps={STEPS} current={result ? 1 : 0} className="mx-auto max-w-2xl" />
+      </div>
 
-      <div className="mt-6 grid items-start gap-6 xl:grid-cols-[1.2fr_1fr]">
+      {/* ให้ฟอร์มกว้างกว่าแผงขวา เพราะฝั่งซ้ายมีช่องกรอกจริง ส่วนขวาเป็นคำอธิบาย
+          และเปลี่ยนจุดตัดจาก xl เป็น lg เพราะที่ 1024px ก็วางสองคอลัมน์ได้สบายแล้ว */}
+      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <AssessmentForm
           answers={answers}
           onAnswersChange={(next) => { setAnswers(next); setResult(null); }}
@@ -96,7 +104,9 @@ export function WizardView() {
           authorities={authorities}
           loadError={loadError}
         />
-        <ResultPanel result={result} />
+        <div className="lg:sticky lg:top-24">
+          <ResultPanel result={result} />
+        </div>
       </div>
 
       {result && <DocumentChecklist result={result} />}
@@ -190,6 +200,7 @@ function AssessmentForm({
         />
         <TextField
           label="จำนวนผู้เข้าพักสูงสุด"
+          icon={Users}
           inputMode="numeric"
           placeholder="40"
           hint="จำนวนคนที่รับได้พร้อมกันทั้งหมด"
@@ -203,17 +214,19 @@ function AssessmentForm({
       <fieldset className="mt-6">
         <legend className="text-sm font-semibold text-ink">มีห้องอาหารหรือไม่</legend>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          {/* คำอธิบายสั้นลงเพราะการ์ดสองใบวางข้างกันในคอลัมน์แคบ
+              ข้อความยาวจะตัดบรรทัดกลางคำจนอ่านสะดุด */}
           <ChoiceCard
             checked={!hasRestaurant}
             onSelect={() => setHasRestaurant(false)}
             title="ไม่มี"
-            description="ไม่มีการให้บริการห้องอาหารในสถานประกอบการ"
+            description="ไม่มีบริการห้องอาหาร"
           />
           <ChoiceCard
             checked={hasRestaurant}
             onSelect={() => setHasRestaurant(true)}
             title="มี"
-            description="มีการให้บริการห้องอาหารในสถานประกอบการ"
+            description="มีบริการห้องอาหาร"
           />
         </div>
       </fieldset>
@@ -370,10 +383,11 @@ function EmptyResult() {
         <figcaption className="relative z-10 px-6 text-center text-sm font-medium text-brand-700">
           เริ่มต้นถูกต้อง ธุรกิจที่พักของคุณไปได้ไกลกว่าเดิม
         </figcaption>
+        {/* จำกัดความสูงไว้ ไม่งั้นคอลัมน์ขวายาวกว่าฟอร์มมากจนหน้าดูเอียง */}
         <Illustration
           scene="hotel-garden"
-          sizes="(min-width: 1280px) 490px, (min-width: 1024px) 720px, (min-width: 640px) 90vw, calc(100vw - 32px)"
-          className="illustration-edge-fade -mt-4"
+          sizes="(min-width: 1024px) 440px, (min-width: 640px) 90vw, calc(100vw - 32px)"
+          className="illustration-edge-fade -mt-4 max-h-64 object-cover object-top sm:max-h-72"
         />
       </figure>
     </aside>
@@ -409,8 +423,8 @@ function DocumentChecklist({ result }: { result: ClassifyResult }) {
           description="เตรียมและอัปโหลดเอกสารด้วยตัวเอง ผ่านระบบ HoTLinE Doc"
         >
           <div className="space-y-3">
-            {self_service.map((doc) => (
-              <DocumentCard key={doc.code} doc={doc} />
+            {groupByParent(self_service).map((group) => (
+              <DocumentCard key={group.parent.code} doc={group.parent} attachments={group.children} />
             ))}
           </div>
         </SectionCard>
@@ -427,8 +441,8 @@ function DocumentChecklist({ result }: { result: ClassifyResult }) {
             </p>
           )}
           <div className="space-y-3">
-            {external.map((doc) => (
-              <DocumentCard key={doc.code} doc={doc} />
+            {groupByParent(external).map((group) => (
+              <DocumentCard key={group.parent.code} doc={group.parent} attachments={group.children} />
             ))}
           </div>
         </SectionCard>
@@ -443,7 +457,14 @@ function DocumentChecklist({ result }: { result: ClassifyResult }) {
   );
 }
 
-function DocumentCard({ doc }: { doc: RequiredDocument }) {
+function DocumentCard({
+  doc,
+  attachments = [],
+}: {
+  doc: RequiredDocument;
+  /** ช่องแนบที่อยู่ในแบบฟอร์มฉบับนี้ — ไม่ใช้ชื่อ children เพราะ React จองไว้แล้ว */
+  attachments?: RequiredDocument[];
+}) {
   return (
     <article className="rounded-xl border border-line bg-surface p-3">
       <div className="flex items-start gap-3">
@@ -480,11 +501,26 @@ function DocumentCard({ doc }: { doc: RequiredDocument }) {
               <Upload className="size-3.5 shrink-0" aria-hidden />
             )}
             {doc.is_system_form
-              ? "ระบบสร้างเอกสารให้จากข้อมูลที่กรอก"
+              ? "ระบบกรอกให้จากข้อมูลที่กรอก เหลือเพียงลงลายมือชื่อในระบบ"
               : describeAccepted(doc.accepted_mime)}
           </p>
         </div>
       </div>
+
+      {/* ช่องแนบที่อยู่ในแบบฟอร์มฉบับนี้ แสดงซ้อนเข้ามาให้เห็นว่าเป็นส่วนหนึ่งของกัน */}
+      {attachments.length > 0 && (
+        <ul className="mt-3 space-y-2 border-l-2 border-brand-100 pl-4">
+          {attachments.map((child) => (
+            <li key={child.code} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-mono text-xs text-ink-muted">{child.code}</span>
+              <span className="text-ink">{child.name_th}</span>
+              <span className="rounded-full bg-canvas px-2 py-0.5 text-xs text-ink-muted">
+                {child.is_mandatory ? "บังคับ" : "แนบถ้ามี"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {doc.contact_point && <ContactBlock contact={doc.contact_point} note={doc.preparation_note} />}
 

@@ -11,9 +11,9 @@
 เจ้าของงานส่วนนี้: <ใส่ชื่อสมาชิก>
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 
@@ -44,11 +44,26 @@ router = APIRouter()
 CurrentOfficer = Annotated[User, Depends(require_role(UserRole.OFFICER))]
 
 
-@router.get("/queue", response_model=list[QueueItemOut], summary="คิวคำขอในเขตของตน")
+@router.get(
+    "/queue",
+    response_model=list[QueueItemOut],
+    summary="คิวคำขอในเขตของตน",
+    responses={403: {"description": "บัญชีนี้ไม่ใช่เจ้าหน้าที่ท้องถิ่น"}},
+)
 def queue(
-    db: DbSession, current: CurrentOfficer, status_filter: str | None = None
+    db: DbSession,
+    current: CurrentOfficer,
+    scope: Literal["open", "revision", "closed", "all"] = "open",
 ) -> list[QueueItemOut]:
-    rows = officer_svc.queue(db, current, status_filter)
+    """แบ่งคิวตามว่า "ลูกบอลอยู่ในมือใคร"
+
+    open     คำขอที่รอเจ้าหน้าที่ลงมือ — **รวมที่อนุมัติแล้วแต่ยังไม่ออกเอกสาร**
+             ถ้าไม่รวม คำขอจะหายจากคิวทันทีที่กดอนุมัติ แล้วกดออกเอกสารไม่ได้อีก
+    revision รอผู้ยื่นส่งเอกสารกลับมา เจ้าหน้าที่ทำอะไรไม่ได้จนกว่าจะได้รับ
+    closed   ออกเอกสารแล้วหรือไม่อนุมัติ
+    all      ทั้งหมดยกเว้นร่างที่ผู้ยื่นยังไม่ได้ส่ง
+    """
+    rows = officer_svc.queue(db, current, scope)
     authorities = {a.id: a.name for a in db.scalars(select(LocalAuthority)).all()}
 
     return [
@@ -161,25 +176,40 @@ def decide(
     summary="ออกใบอนุญาตหรือหนังสือรับรองการแจ้ง (M10)",
     responses={
         403: {"description": "คำขอนี้อยู่นอกเขตที่รับผิดชอบ (T-09)"},
-        422: {"description": "คำขอยังไม่อนุมัติ หรือออกเอกสารไปแล้ว"},
+        422: {"description": "คำขอยังไม่อนุมัติ ออกเอกสารไปแล้ว หรือไม่ได้แนบลายมือชื่อผู้ลงนาม"},
     },
 )
-def issue_license(
-    application_no: str, db: DbSession, current: CurrentOfficer, request: Request
+async def issue_license(
+    application_no: str,
+    db: DbSession,
+    current: CurrentOfficer,
+    request: Request,
+    signature: Annotated[UploadFile, File(description="รูปลายมือชื่อผู้ลงนาม (PNG) ที่เจ้าหน้าที่เซ็นบนหน้าจอ")],
 ) -> OfficerApplicationOut:
     """แยกจากขั้นอนุมัติโดยตั้งใจ
 
     การอนุมัติกับการออกเอกสารเป็นคนละการกระทำในทางปฏิบัติ และแยกไว้ทำให้
     เส้นเวลาของคำขออ่านออกว่าอนุมัติเมื่อใด ออกเอกสารเมื่อใด
+
+    ลายมือชื่อผู้ลงนามบังคับ เพราะเอกสารที่ไม่มีใครลงนามคือเอกสารที่ใช้ไม่ได้
+    กติกาเดียวกับที่ผู้ยื่นต้องลงลายมือชื่อในแบบฟอร์มก่อนยื่น (M6)
     """
     application = _load_in_scope(db, application_no, current, request)
     snapshot = app_svc.classification_of(db, application)
+
+    png = await signature.read()
+    if signature.content_type != "image/png" or not png:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="กรุณาลงลายมือชื่อผู้ลงนามก่อนออกเอกสาร",
+        )
 
     issued, error = license_svc.issue(
         db,
         application=application,
         officer=current,
         property_type=snapshot.property_type,
+        signature_png=png,
         ip=request.client.host if request.client else None,
     )
     if issued is None:

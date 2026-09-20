@@ -31,6 +31,30 @@ OPEN_STATUSES = {
     ApplicationStatus.NEEDS_REVISION,
 }
 
+# สถานะที่ยัง "รอเจ้าหน้าที่ทำอะไรสักอย่าง" — ใช้กรองคิวงานหลัก
+#
+# ต้องแยกจาก OPEN_STATUSES เพราะสองชุดนี้ตอบคนละคำถาม:
+#   OPEN_STATUSES        = ยังแก้ผลพิจารณาได้ไหม
+#   NEEDS_OFFICER_ACTION = ยังค้างงานที่เจ้าหน้าที่ไหม
+#
+# approved อยู่ในชุดนี้เพราะยังค้างการออกเอกสาร (M10) แต่ต้องตัดสินซ้ำไม่ได้
+# ส่วน needs_revision ไม่อยู่ เพราะลูกบอลอยู่ที่ผู้ยื่น ไม่ใช่เจ้าหน้าที่
+NEEDS_OFFICER_ACTION = {
+    ApplicationStatus.SUBMITTED,
+    ApplicationStatus.UNDER_REVIEW,
+    ApplicationStatus.APPROVED,
+}
+
+# รอผู้ยื่นส่งเอกสารกลับมา — เจ้าหน้าที่ทำอะไรไม่ได้จนกว่าจะได้รับ
+# แยกออกมาเป็นคิวของตัวเอง เพราะเป็นคนละงานกับที่ตัวเองต้องลงมือ
+WAITING_ON_APPLICANT = {ApplicationStatus.NEEDS_REVISION}
+
+# จบกระบวนการแล้ว เก็บไว้ให้ค้นย้อนหลัง ไม่ต้องขึ้นคิวหลัก
+CLOSED_STATUSES = {
+    ApplicationStatus.LICENSE_ISSUED,
+    ApplicationStatus.REJECTED,
+}
+
 # ผลตรวจรายฉบับ -> สถานะของเอกสารฉบับนั้น
 #
 # ทั้ง "ขอแก้ไข" และ "ไม่ผ่าน" ทำให้ผู้ยื่นต้องส่งไฟล์ใหม่เหมือนกัน
@@ -92,23 +116,37 @@ def deny_cross_authority(
     )
 
 
-def queue(db: Session, officer: User, status: str | None = None) -> list[QueueRow]:
+# กลุ่มคิวที่หน้าจอเลือกดูได้ — ตรงกับแท็บบนหน้าคิวคำขอ
+QUEUE_SCOPES = {
+    "open": NEEDS_OFFICER_ACTION,
+    "revision": WAITING_ON_APPLICANT,
+    "closed": CLOSED_STATUSES,
+    "all": set(ApplicationStatus) - {ApplicationStatus.DRAFT},
+}
+
+
+def queue(db: Session, officer: User, scope: str = "open") -> list[QueueRow]:
     """คิวคำขอในเขตของเจ้าหน้าที่ รอนานสุดขึ้นก่อน
 
     เรียงจากคำขอที่ค้างนานที่สุด เพราะปัญหาที่โจทย์ยกมาคือผู้ยื่นไม่รู้ว่า
     เรื่องค้างอยู่ที่ใคร การให้เรื่องเก่าขึ้นก่อนช่วยไม่ให้มีคำขอตกค้างลืม
+
+    ไม่รวมคำขอสถานะร่างไม่ว่ากลุ่มไหน เพราะผู้ยื่นยังไม่ได้ส่งมา
+    เจ้าหน้าที่จึงไม่ควรเห็น
     """
     mine = authority_ids(db, officer)
     if not mine:
         return []
 
+    statuses = QUEUE_SCOPES.get(scope, NEEDS_OFFICER_ACTION)
+
     query = (
         select(Application)
-        .where(Application.local_authority_id.in_(mine))
+        .where(
+            Application.local_authority_id.in_(mine),
+            Application.status.in_([s.value for s in statuses]),
+        )
         .order_by(Application.status_changed_at)
-    )
-    query = query.where(
-        Application.status == status if status else Application.status.in_(OPEN_STATUSES)
     )
 
     rows: list[QueueRow] = []
@@ -231,7 +269,7 @@ def mandatory_not_approved(db: Session, application: Application) -> list[str]:
             DocumentRequirement.is_mandatory,
             DocumentType.is_active,
         )
-        .order_by(DocumentType.display_order)
+        .order_by(DocumentRequirement.display_order)
     ).all()
 
     approved_types = {
@@ -248,8 +286,9 @@ def mandatory_not_approved(db: Session, application: Application) -> list[str]:
     return [
         f"{r.document_type.code} {r.document_type.name_th}"
         for r in requirements
-        # แบบฟอร์มที่ระบบสร้างเองไม่มีไฟล์ให้ตรวจ จึงไม่นับเป็นค้างตรวจ
-        if not r.document_type.is_system_form and r.document_type_id not in approved_types
+        # รวมแบบฟอร์มที่ระบบสร้างด้วย เพราะมีลายมือชื่อผู้แจ้งเป็นไฟล์ให้ตรวจจริง
+        # ถ้ายกเว้นไว้ ลายมือชื่อจะเป็นสิ่งเดียวในคำขอที่ไม่มีใครตรวจเลย
+        if r.document_type_id not in approved_types
     ]
 
 

@@ -142,11 +142,13 @@ CREATE TABLE document_type (
 	accepted_mime VARCHAR(200) DEFAULT 'application/pdf,image/jpeg,image/png' NOT NULL, 
 	display_order INTEGER DEFAULT '0' NOT NULL, 
 	is_active BOOLEAN DEFAULT 'true' NOT NULL, 
+	parent_id INTEGER, 
 	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
 	updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
 	PRIMARY KEY (id), 
 	UNIQUE (code), 
-	FOREIGN KEY(issuing_agency_id) REFERENCES issuing_agency (id)
+	FOREIGN KEY(issuing_agency_id) REFERENCES issuing_agency (id), 
+	FOREIGN KEY(parent_id) REFERENCES document_type (id)
 );
 
 CREATE TABLE fee_schedule (
@@ -197,6 +199,7 @@ CREATE TABLE document_requirement (
 	property_type_id INTEGER NOT NULL, 
 	document_type_id INTEGER NOT NULL, 
 	is_mandatory BOOLEAN DEFAULT 'true' NOT NULL, 
+	display_order INTEGER DEFAULT '0' NOT NULL, 
 	note TEXT, 
 	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
 	updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
@@ -326,6 +329,7 @@ CREATE TABLE license (
 	valid_from DATE NOT NULL, 
 	valid_until DATE, 
 	is_revoked BOOLEAN DEFAULT 'false' NOT NULL, 
+	issuer_signature_path VARCHAR(255), 
 	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
 	updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
 	PRIMARY KEY (id), 

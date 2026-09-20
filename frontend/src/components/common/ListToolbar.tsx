@@ -6,15 +6,23 @@ import { useId } from "react";
 import { applicationStatusLabel } from "@/components/common/StatusPill";
 import type { ApplicationStatus } from "@/types/enums";
 
+/**
+ * ช่องสถานะเป็นตัวเลือก
+ *
+ * หน้าที่แบ่งกลุ่มด้วยแท็บอยู่แล้ว (เช่น คิวคำขอของเจ้าหน้าที่) ไม่ควรมีช่องนี้
+ * เพราะกลายเป็นตัวกรองสองชั้นที่ทำงานคนละระดับ — แท็บเลือกว่าจะโหลดข้อมูล
+ * กลุ่มไหน ส่วนช่องนี้กรองเฉพาะที่โหลดมาแล้ว ผู้ใช้จะงงว่าทำไมเลือกสถานะ
+ * บางค่าแล้วไม่เจออะไรเลย
+ */
 type Props = {
   query: string;
   onQueryChange: (value: string) => void;
-  status: string;
-  onStatusChange: (value: string) => void;
-  statuses: ApplicationStatus[];
   count: number;
   total: number;
-};
+} & (
+  | { status: string; onStatusChange: (value: string) => void; statuses: ApplicationStatus[] }
+  | { status?: undefined; onStatusChange?: undefined; statuses?: undefined }
+);
 
 export function ListToolbar({
   query,
@@ -26,6 +34,7 @@ export function ListToolbar({
   total,
 }: Props) {
   const id = useId();
+  const showStatus = statuses !== undefined;
   return (
     <div className="mt-7 rounded-2xl border border-line bg-surface p-4 shadow-card">
       <div className="flex flex-col gap-3 sm:flex-row">
@@ -46,21 +55,23 @@ export function ListToolbar({
             className="min-h-12 w-full rounded-xl border border-line bg-canvas py-3 pr-3 pl-10 text-sm"
           />
         </div>
+        {showStatus && (
         <label className="flex items-center gap-3 text-sm text-ink-muted">
           <span className="shrink-0">สถานะ</span>
           <select
             value={status}
-            onChange={(e) => onStatusChange(e.target.value)}
+            onChange={(e) => onStatusChange?.(e.target.value)}
             className="min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 text-ink sm:w-48"
           >
             <option value="">ทั้งหมด</option>
-            {statuses.map((value) => (
+            {statuses?.map((value) => (
               <option key={value} value={value}>
                 {applicationStatusLabel(value)}
               </option>
             ))}
           </select>
         </label>
+        )}
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-muted">
         <p role="status">
@@ -72,7 +83,7 @@ export function ListToolbar({
             type="button"
             onClick={() => {
               onQueryChange("");
-              onStatusChange("");
+              onStatusChange?.("");
             }}
             className="flex min-h-9 items-center gap-1 text-brand-700"
           >

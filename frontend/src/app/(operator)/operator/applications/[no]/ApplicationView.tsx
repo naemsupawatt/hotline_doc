@@ -30,6 +30,7 @@ import {
   formatSize,
   getApplication,
   labelForKind,
+  openDocumentFile,
   submitApplication,
   uploadDocument,
 } from "@/lib/applications";
@@ -305,6 +306,8 @@ function SubmitPanel({
             {application.missing_documents.map((m) => (
               <li key={m.code}>
                 {m.code} {m.name_th}
+                {/* แบบฟอร์มที่ระบบกรอกให้ ขาดลายมือชื่อ ไม่ใช่ขาดไฟล์ ต้องพูดให้ตรง */}
+                {m.needs_signature && " — ยังไม่ได้ลงลายมือชื่อ"}
               </li>
             ))}
           </ul>
@@ -343,6 +346,15 @@ function DocumentRow({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  async function openFile(fileId: number) {
+    setError(null);
+    try {
+      await openDocumentFile(applicationNo, fileId);
+    } catch {
+      setError("เปิดไฟล์ไม่ได้ กรุณาลองใหม่อีกครั้ง");
+    }
+  }
 
   async function upload(file: File, slotNo?: number) {
     setError(null);
@@ -385,7 +397,7 @@ function DocumentRow({
               <Upload className="size-3.5 shrink-0" aria-hidden />
             )}
             {doc.is_system_form
-              ? "ระบบสร้างเอกสารให้จากข้อมูลที่กรอก ไม่ต้องแนบไฟล์"
+              ? "ระบบกรอกให้จากข้อมูลคำขอ เหลือเพียงลงลายมือชื่อ ซึ่งต้องมีก่อนยื่นคำขอ"
               : describeAccepted(doc.accepted_mime)}
           </p>
 
@@ -409,14 +421,14 @@ function DocumentRow({
               className="flex flex-wrap items-center gap-2 rounded-lg bg-canvas px-3 py-2 text-sm"
             >
               <Paperclip className="size-3.5 shrink-0 text-ink-muted" aria-hidden />
-              <a
-                href={`/api/files/${file.id}`}
-                onClick={(e) => e.preventDefault()}
-                className="min-w-0 flex-1 truncate font-medium text-ink"
+              <button
+                type="button"
+                onClick={() => openFile(file.id)}
+                className="min-w-0 flex-1 truncate text-left font-medium text-brand-600 underline underline-offset-4 hover:text-brand-400"
                 title={file.original_name}
               >
                 {file.original_name}
-              </a>
+              </button>
               <span className="text-ink-muted">{formatSize(file.size_bytes)}</span>
               {file.version_no > 1 && (
                 <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
@@ -440,6 +452,24 @@ function DocumentRow({
         <p role="alert" className="mt-2 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger-fg">
           {error}
         </p>
+      )}
+
+      {/* แบบฟอร์มทุกฉบับที่ระบบกรอกให้ มีหน้ากระดาษของตัวเองที่เส้นทางเดียวกัน */}
+      {doc.is_system_form && (
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <Link
+            href={`/operator/applications/${applicationNo}/forms/${doc.code}`}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border-2 border-brand-500 px-4 py-2.5 text-sm font-semibold text-brand-600 hover:bg-brand-50"
+          >
+            <Printer className="size-4" aria-hidden />
+            เปิดแบบฟอร์ม · ลงลายมือชื่อ · บันทึกเป็น PDF
+          </Link>
+          {doc.files.length === 0 && (
+            <span className="text-sm font-medium text-warn-fg">
+              ยังไม่ได้ลงลายมือชื่อ — ต้องเซ็นก่อนจึงจะยื่นคำขอได้
+            </span>
+          )}
+        </div>
       )}
 
       {editable && !doc.is_system_form && (

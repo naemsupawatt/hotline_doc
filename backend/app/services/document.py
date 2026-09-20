@@ -105,11 +105,16 @@ def validate(doc: DocumentType, *, content_type: str, size: int) -> str | None:
     ชนิดไฟล์ที่ยอมรับอ่านจากฐานข้อมูล ไม่ได้ hard-code ไว้ในโค้ด
     Super Admin จึงแก้ได้เองเมื่อระเบียบเปลี่ยน (US-09)
     """
-    if doc.is_system_form:
-        return f"{doc.name_th} เป็นแบบฟอร์มที่กรอกในระบบ ไม่ต้องอัปโหลดไฟล์"
-
     allowed = doc.accepted_mime_list
     if content_type not in allowed:
+        # แบบฟอร์มที่กรอกในระบบไม่มี "ตัวเอกสาร" ให้แนบ มีแต่รูปลายมือชื่อผู้แจ้ง
+        # (ดู services/system_form.py) ข้อความจึงต้องบอกทางออกที่ถูก ไม่ใช่
+        # บอกแค่ว่าไฟล์ผิดชนิด ซึ่งจะทำให้ผู้ใช้ไปสแกนแบบฟอร์มมาแนบแทน
+        if doc.is_system_form:
+            return (
+                f"{doc.name_th} เป็นแบบฟอร์มที่ระบบกรอกให้แล้ว "
+                "ช่องนี้ใช้แนบได้เฉพาะรูปลายมือชื่อ กรุณาลงลายมือชื่อในหน้าแบบฟอร์ม"
+            )
         return f"{doc.name_th} รับเฉพาะ{_describe(allowed)} กรุณาเลือกไฟล์ใหม่"
 
     if size <= 0:
@@ -202,6 +207,9 @@ def save_upload(
 class Missing:
     code: str
     name_th: str
+    # แบบฟอร์มที่ระบบกรอกให้ ไฟล์ที่ขาดคือ "ลายมือชื่อ" ไม่ใช่ตัวเอกสาร
+    # หน้าจอกับข้อความ error ต้องพูดคนละคำ ไม่งั้นผู้ใช้จะไปหาไฟล์มาแนบ
+    needs_signature: bool = False
 
 
 def missing_mandatory(
@@ -209,9 +217,10 @@ def missing_mandatory(
 ) -> list[Missing]:
     """เอกสารบังคับที่ยังขาด — T-06 บังคับให้ "ระบุชัดว่าขาดฉบับใดบ้าง"
 
-    เอกสารที่เป็นแบบฟอร์มในระบบ (is_system_form) ถือว่าครบตั้งแต่เปิดคำขอ
-    เพราะข้อมูลที่แบบฟอร์มนั้นใช้ถูกกรอกครบไปแล้วตอนเปิดคำขอ
-    ไม่มีไฟล์ให้ผู้ใช้อัปโหลด จึงไม่ควรเอามาบล็อกการยื่น
+    แบบฟอร์มที่ระบบกรอกให้ (is_system_form) ก็นับด้วย เพราะสิ่งที่ยังขาด
+    คือลายมือชื่อผู้แจ้ง ซึ่งเป็นสิ่งที่ทำให้หนังสือฉบับนั้นมีผลตามกฎหมาย
+    ระบบกรอกแทนได้ทุกช่องยกเว้นช่องนี้ จึงต้องบล็อกการยื่นเหมือนเอกสารบังคับอื่น
+    (ลายมือชื่อเก็บเป็นไฟล์แนบของแบบฟอร์มนั้นเอง — ดู services/system_form.py)
     """
     uploaded_type_ids = {row.document_type_id for row in current_files(db, application.id)}
 
@@ -224,11 +233,15 @@ def missing_mandatory(
             DocumentRequirement.is_mandatory,
             DocumentType.is_active,
         )
-        .order_by(DocumentType.display_order)
+        .order_by(DocumentRequirement.display_order)
     ).all()
 
     return [
-        Missing(r.document_type.code, r.document_type.name_th)
+        Missing(
+            r.document_type.code,
+            r.document_type.name_th,
+            needs_signature=r.document_type.is_system_form,
+        )
         for r in requirements
-        if not r.document_type.is_system_form and r.document_type_id not in uploaded_type_ids
+        if r.document_type_id not in uploaded_type_ids
     ]

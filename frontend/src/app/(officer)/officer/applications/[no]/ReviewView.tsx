@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { Mascot } from "@/components/brand/Mascot";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SectionCard } from "@/components/common/SectionCard";
+import { SignaturePad } from "@/components/common/SignaturePad";
 import { StatusPill } from "@/components/common/StatusPill";
 import { Button } from "@/components/ui/Button";
 import { ApiError } from "@/lib/api";
@@ -236,7 +237,9 @@ function DocumentReviewRow({
 
       {doc.is_system_form && (
         <p className="mt-2 text-sm text-ink-muted">
-          แบบฟอร์มที่ระบบสร้างจากข้อมูลคำขอ ไม่มีไฟล์ให้ตรวจ
+          {doc.files.length > 0
+            ? "แบบฟอร์มที่ระบบสร้างจากข้อมูลคำขอ ไฟล์ที่แนบคือลายมือชื่อของผู้แจ้ง"
+            : "แบบฟอร์มที่ระบบสร้างจากข้อมูลคำขอ ผู้แจ้งยังไม่ได้ลงลายมือชื่อ"}
         </p>
       )}
 
@@ -316,13 +319,14 @@ function DecisionPanel({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  async function issue() {
+  async function issue(signature: Blob) {
     setError(null);
     setPending(true);
     try {
-      onDecided(await issueLicense(app.application_no));
+      onDecided(await issueLicense(app.application_no, signature));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "ออกเอกสารไม่สำเร็จ");
+      throw err; // ให้ช่องลายมือชื่อรู้ว่าไม่สำเร็จ จะได้ไม่ล้างลายเซ็นทิ้ง
     } finally {
       setPending(false);
     }
@@ -357,10 +361,17 @@ function DecisionPanel({
         )}
 
         {app.can_issue_license && (
-          <Button className="mt-3" onClick={issue} disabled={pending}>
-            <FileCheck className="size-5" aria-hidden />
-            {pending ? "กำลังออกเอกสาร…" : "ออกใบอนุญาต / หนังสือรับรอง"}
-          </Button>
+          <div className="mt-4 rounded-xl border border-line bg-canvas p-4">
+            <p className="flex items-center gap-2 font-semibold text-ink">
+              <FileCheck className="size-5 text-brand-600" aria-hidden />
+              ลงนามเพื่อออกเอกสาร
+            </p>
+            {/* เอกสารที่ไม่มีใครลงนามใช้ไม่ได้ การเซ็นจึงเป็นขั้นตอนเดียวกับการออกเอกสาร */}
+            <p className="mt-1 text-sm text-ink-muted">
+              ลายมือชื่อของคุณจะปรากฏบนใบอนุญาต/หนังสือรับรองที่ผู้ยื่นพิมพ์ออกไป
+            </p>
+            <SignaturePad className="mt-3" onSave={issue} saveLabel="ลงนามและออกเอกสาร" />
+          </div>
         )}
       </div>
     );

@@ -7,7 +7,12 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/brand/Logo";
 import { Mascot } from "@/components/brand/Mascot";
 import { ApiError } from "@/lib/api";
-import { type LicenseDocument, getLicense, thaiDate } from "@/lib/applications";
+import {
+  type LicenseDocument,
+  getLicense,
+  licenseSignatureUrl,
+  thaiDate,
+} from "@/lib/applications";
 
 /**
  * M10 — เอกสารอนุญาตอิเล็กทรอนิกส์ที่ "พิมพ์ออกมาได้"
@@ -22,6 +27,8 @@ export function LicenseView({ applicationNo }: { applicationNo: string }) {
   const [doc, setDoc] = useState<LicenseDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
+
   useEffect(() => {
     getLicense(applicationNo)
       .then(setDoc)
@@ -29,6 +36,29 @@ export function LicenseView({ applicationNo }: { applicationNo: string }) {
         setError(err instanceof ApiError ? err.message : "เปิดเอกสารไม่ได้ กรุณาลองใหม่"),
       );
   }, [applicationNo]);
+
+  // ลายมือชื่อผู้ลงนามต้องโหลดพร้อม token จึงเป็น object URL ที่ต้องคืนหน่วยความจำเอง
+  useEffect(() => {
+    let url: string | null = null;
+    let cancelled = false;
+
+    if (doc?.has_issuer_signature) {
+      licenseSignatureUrl(applicationNo)
+        .then((created) => {
+          url = created;
+          if (cancelled) URL.revokeObjectURL(created);
+          else setSignatureUrl(created);
+        })
+        // โหลดรูปไม่ได้ต้องไม่ทำให้พิมพ์เอกสารไม่ได้ เหลือชื่อผู้ลงนามเป็นข้อความเหมือนเดิม
+        .catch(() => setSignatureUrl(null));
+    }
+
+    return () => {
+      cancelled = true;
+      setSignatureUrl(null);
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [applicationNo, doc?.has_issuer_signature]);
 
   if (error) {
     return (
@@ -118,6 +148,28 @@ export function LicenseView({ applicationNo }: { applicationNo: string }) {
             />
           )}
         </dl>
+
+        {/* ช่องลงนามของผู้ออกเอกสาร — เซ็นตอนกดออกเอกสาร (ดู decisions ข้อ 12) */}
+        <div className="mt-10 flex justify-end">
+          <div className="w-72 text-center text-ink">
+            <div className="flex h-24 items-end justify-center">
+              {signatureUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={signatureUrl}
+                  alt={`ลายมือชื่อของ ${doc.issued_by_name}`}
+                  className="max-h-24 w-auto object-contain"
+                />
+              ) : (
+                <span className="pb-2 text-sm text-ink-muted print:hidden">
+                  (เอกสารใบนี้ไม่มีลายมือชื่อเก็บไว้ในระบบ)
+                </span>
+              )}
+            </div>
+            <p className="border-t border-dotted border-ink/60 pt-2">ลงชื่อ ผู้ออกเอกสาร</p>
+            <p className="mt-1">( {doc.issued_by_name} )</p>
+          </div>
+        </div>
 
         <footer className="mt-10 border-t border-line pt-5 text-sm text-ink-muted">
           <p>ออกโดย {doc.issued_by_name} · {doc.local_authority_name}</p>

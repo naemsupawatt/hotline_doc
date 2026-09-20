@@ -50,6 +50,8 @@ export type RequiredDocument = {
   preparation_note: string | null;
   estimated_days: number | null;
   contact_point: ContactPoint | null;
+  /** เอกสารย่อยที่แนบอยู่ใต้แบบฟอร์มอีกฉบับ เช่น ช่องแนบในแบบ ร.ร.1 */
+  parent_code: string | null;
   /** ตรงกับ DocumentStatus ใน types/enums.ts */
   status: string;
   /** ไฟล์รุ่นปัจจุบันของแต่ละ slot */

@@ -4,7 +4,7 @@
  * ชนิดข้อมูลต้องตรงกับ backend/app/schemas/officer.py
  * ทุกเส้นทางต้องแนบ token และถูกกรองด้วยเขตที่เจ้าหน้าที่สังกัดเสมอ (T-09)
  */
-import { api } from "@/lib/api";
+import { BASE, api } from "@/lib/api";
 import type { ApplicationProperty } from "@/lib/applications";
 import { getToken } from "@/lib/auth";
 import type { ClassifyResult } from "@/lib/wizard";
@@ -51,8 +51,11 @@ function authed() {
   return token ? { token } : {};
 }
 
-export function officerQueue() {
-  return api<QueueItem[]>("/officer/queue", authed());
+/** กลุ่มคิวที่เลือกดูได้ — ต้องตรงกับ QUEUE_SCOPES ใน services/officer.py */
+export type QueueScope = "open" | "revision" | "closed" | "all";
+
+export function officerQueue(scope: QueueScope = "open") {
+  return api<QueueItem[]>(`/officer/queue?scope=${scope}`, authed());
 }
 
 export function officerApplication(applicationNo: string) {
@@ -81,10 +84,19 @@ export function decideApplication(applicationNo: string, decision: Decision, rea
   );
 }
 
-export function issueLicense(applicationNo: string) {
+/**
+ * ออกใบอนุญาต/หนังสือรับรอง พร้อมลายมือชื่อผู้ลงนาม
+ *
+ * ลายมือชื่อบังคับ เพราะเอกสารที่ไม่มีใครลงนามคือเอกสารที่ใช้ไม่ได้
+ * กติกาเดียวกับที่ผู้ยื่นต้องลงลายมือชื่อในแบบฟอร์มก่อนยื่น (M6)
+ */
+export function issueLicense(applicationNo: string, signature: Blob) {
+  const form = new FormData();
+  form.append("signature", new File([signature], "ลายมือชื่อผู้ลงนาม.png", { type: "image/png" }));
+
   return api<OfficerApplication>(
     `/officer/applications/${encodeURIComponent(applicationNo)}/issue-license`,
-    { method: "POST", ...authed() },
+    { method: "POST", body: form, ...authed() },
   );
 }
 
@@ -98,8 +110,7 @@ export async function openDocumentFile(
   applicationNo: string,
   fileId: number,
 ): Promise<void> {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
-  const url = `${base}/officer/applications/${encodeURIComponent(applicationNo)}/documents/file/${fileId}`;
+  const url = `${BASE}/officer/applications/${encodeURIComponent(applicationNo)}/documents/file/${fileId}`;
 
   const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
   if (!res.ok) throw new Error("เปิดไฟล์ไม่ได้");

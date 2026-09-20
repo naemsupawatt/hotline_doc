@@ -143,6 +143,8 @@ def upload(client, token, no, code, *, data=PDF, name="doc.pdf", mime="applicati
 
 
 def upload_all_mandatory(client, token, no) -> None:
+    # A01 เป็นแบบฟอร์มในระบบ ไฟล์ที่ต้องมีคือรูปลายมือชื่อ
+    upload(client, token, no, "A01", data=PNG, name="signature.png", mime="image/png")
     upload(client, token, no, "A02")
     upload(client, token, no, "A03")
     upload(client, token, no, "B01")
@@ -209,11 +211,63 @@ def test_document_that_allows_multiple_opens_new_slots(client, token, applicatio
     assert first["version_no"] == second["version_no"] == 1
 
 
-def test_system_form_cannot_be_uploaded(client, token, application_no):
-    """A01 กรอกในระบบ ไม่มีไฟล์ให้แนบ"""
-    res = upload(client, token, application_no, "A01", data=PNG, name="x.png", mime="image/png")
+def test_system_form_accepts_the_signature_image(client, token, application_no):
+    """A01 ระบบกรอกเนื้อหาให้ เหลือช่องเดียวที่ระบบทำแทนไม่ได้คือลายมือชื่อ"""
+    res = upload(
+        client, token, application_no, "A01", data=PNG, name="signature.png", mime="image/png"
+    )
+    assert res.status_code == 201, res.text
+    assert res.json()["version_no"] == 1
+
+
+def test_signing_again_keeps_the_previous_signature_as_an_older_version(
+    client, token, application_no
+):
+    """เซ็นใหม่ = รุ่นถัดไป ไม่ทับของเดิม เหมือนไฟล์แนบฉบับอื่น (ข้อ 8)"""
+    first = upload(
+        client, token, application_no, "A01", data=PNG, name="sig.png", mime="image/png"
+    ).json()
+    second = upload(
+        client, token, application_no, "A01", data=PNG, name="sig.png", mime="image/png"
+    ).json()
+
+    assert (first["slot_no"], first["version_no"]) == (1, 1)
+    assert (second["slot_no"], second["version_no"]) == (1, 2)
+
+
+def test_system_form_rejects_a_scanned_document_and_says_what_to_do_instead(
+    client, token, application_no
+):
+    """ผู้ใช้ที่พยายามสแกนแบบฟอร์มมาแนบ ต้องได้คำแนะนำที่ถูก ไม่ใช่ error ชนิดไฟล์"""
+    res = upload(client, token, application_no, "A01")  # PDF
     assert res.status_code == 422
-    assert "กรอกในระบบ" in res.json()["detail"]
+    assert "ลายมือชื่อ" in res.json()["detail"]
+
+
+def test_unsigned_notice_form_blocks_submitting(client, token, application_no):
+    """M6: ลายมือชื่อคือสิ่งที่ทำให้หนังสือแจ้งมีผล ขาดไม่ได้เหมือนเอกสารบังคับอื่น"""
+    upload(client, token, application_no, "A02")
+    upload(client, token, application_no, "A03")
+    upload(client, token, application_no, "B01")
+    for code in ["A04", "A05"]:
+        upload(client, token, application_no, code, data=PNG, name="p.png", mime="image/png")
+
+    blocked = client.post(f"/api/v1/applications/{application_no}/submit", headers=auth(token))
+    assert blocked.status_code == 422
+    assert "A01" in blocked.json()["detail"]
+
+    body = client.get(f"/api/v1/applications/{application_no}", headers=auth(token)).json()
+    assert body["can_submit"] is False
+    missing = {m["code"]: m for m in body["missing_documents"]}
+    assert missing["A01"]["needs_signature"] is True, "หน้าจอต้องแยกออกว่าขาดลายมือชื่อ ไม่ใช่ขาดไฟล์"
+
+    upload(client, token, application_no, "A01", data=PNG, name="sig.png", mime="image/png")
+    assert (
+        client.post(
+            f"/api/v1/applications/{application_no}/submit", headers=auth(token)
+        ).status_code
+        == 200
+    )
 
 
 def test_cannot_upload_a_document_not_required_for_this_property_type(
@@ -231,10 +285,11 @@ def test_t06_submit_is_blocked_and_names_every_missing_document(client, token, a
     assert res.status_code == 422
 
     detail = res.json()["detail"]
-    for code in ["A03", "A04", "A05", "B01"]:
+    for code in ["A01", "A03", "A04", "A05", "B01"]:
         assert code in detail, f"ต้องบอกว่าขาด {code} ด้วย"
     assert "A02" not in detail, "ฉบับที่อัปแล้วต้องไม่ถูกนับว่าขาด"
-    assert "A01" not in detail, "แบบฟอร์มในระบบต้องไม่บล็อกการยื่น"
+    # แบบฟอร์มในระบบต้องบอกให้ถูกว่าขาดอะไร ไม่งั้นผู้ใช้จะไปหาไฟล์มาแนบ
+    assert "ลงลายมือชื่อ" in detail
 
 
 def test_checklist_reports_status_and_attached_files(client, token, application_no):
@@ -245,7 +300,8 @@ def test_checklist_reports_status_and_attached_files(client, token, application_
         d["code"]: d for d in body["documents"]["self_service"] + body["documents"]["external"]
     }
 
-    assert by_code["A01"]["status"] == "uploaded", "แบบฟอร์มในระบบถือว่าพร้อมตั้งแต่เปิดคำขอ"
+    assert by_code["A01"]["status"] == "uploaded", "ลงลายมือชื่อแล้ว"
+    assert len(by_code["A01"]["files"]) == 1
     assert by_code["A02"]["status"] == "uploaded"
     assert len(by_code["A02"]["files"]) == 1
     assert body["can_submit"] is True

@@ -1,12 +1,13 @@
 "use client";
 
-import { ChevronRight, Clock, Plus } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Mascot } from "@/components/brand/Mascot";
 import { ListToolbar } from "@/components/common/ListToolbar";
 import { PageHeader } from "@/components/common/PageHeader";
+import { ProgressTrack } from "@/components/common/ProgressTrack";
 import { StatusPill } from "@/components/common/StatusPill";
 import { ApiError } from "@/lib/api";
 import { type ApplicationSummary, myApplications } from "@/lib/applications";
@@ -94,23 +95,27 @@ export function MyApplicationsView() {
             <li key={row.application_no}>
               <Link
                 href={`/operator/applications/${row.application_no}`}
-                className="group flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface p-4 shadow-card transition-all hover:border-brand-200 hover:shadow-lift sm:gap-4 sm:p-5"
+                className="group block rounded-card border border-line bg-surface p-4 shadow-card transition-all hover:border-brand-200 hover:shadow-lift sm:p-5"
               >
-                <div className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm text-ink-muted">
-                      {row.application_no}
-                    </span>
-                    <StatusPill kind="application" status={row.status as ApplicationStatus} />
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm text-ink-muted">
+                        {row.application_no}
+                      </span>
+                      <StatusPill kind="application" status={row.status as ApplicationStatus} />
+                    </div>
+                    <p className="mt-2 text-lg font-semibold break-words text-ink group-hover:text-brand-700">{row.property_name}</p>
+                    <p className="mt-0.5 text-sm text-ink-muted">{row.property_type_name}</p>
                   </div>
-                  <p className="mt-2 text-lg font-semibold break-words text-ink group-hover:text-brand-700">{row.property_name}</p>
-                  <p className="mt-0.5 text-sm text-ink-muted">{row.property_type_name}</p>
+                  <ChevronRight className="mt-1 size-5 shrink-0 text-brand-600" aria-hidden />
                 </div>
-                <p className="flex shrink-0 items-center gap-1 text-sm text-ink-muted">
-                  <Clock className="size-3.5" aria-hidden />
-                  {row.days_waiting} วัน
-                </p>
-                <ChevronRight className="ml-auto size-5 shrink-0 text-brand-600" aria-hidden />
+                {/* M7: แถบความคืบหน้าตอบว่าเหลือขั้นตอนอะไร ใครถือเรื่อง และค้างมากี่วัน */}
+                <ProgressTrack
+                  status={row.status as ApplicationStatus}
+                  daysWaiting={row.days_waiting}
+                  className="mt-4 border-t border-line pt-4"
+                />
               </Link>
             </li>
           ))}

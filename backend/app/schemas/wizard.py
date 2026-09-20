@@ -90,6 +90,10 @@ class DocumentOut(BaseModel):
     allows_multiple: bool = Field(examples=[False])
     accepted_mime: list[str] = Field(examples=[["application/pdf"]])
 
+    # เอกสารย่อยที่แนบอยู่ใต้แบบฟอร์มอีกฉบับ เช่น ช่องแนบในแบบ ร.ร.1
+    # หน้าจอใช้จัดกลุ่มให้แสดงซ้อน ไม่ใช่ลอยเป็นรายการแยก
+    parent_code: str | None = Field(default=None, examples=[None])
+
     # สถานะรายฉบับ ตรงกับ legend 7 สถานะในแบบหน้าจอ
     status: str = Field(default=DocumentStatus.NOT_UPLOADED, examples=["not_uploaded"])
     files: list[UploadedFileOut] = Field(default_factory=list, description="ไฟล์รุ่นปัจจุบันของแต่ละ slot")

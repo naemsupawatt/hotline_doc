@@ -113,10 +113,19 @@ def seed_issuing_agencies(db: Session) -> dict[str, IssuingAgency]:
 
 
 def seed_document_types(db: Session, agencies: dict[str, IssuingAgency]) -> dict[str, DocumentType]:
+    """สร้าง/อัปเดตชนิดเอกสาร แล้วผูก parent ทีหลัง
+
+    ต้องแยกสองรอบ เพราะเอกสารย่อยอ้างถึงฉบับแม่ซึ่งอาจยังไม่มี id ตอนวนรอบแรก
+    """
     result: dict[str, DocumentType] = {}
+    parents: dict[str, str] = {}
+
     for row in DOCUMENT_TYPES:
         data = dict(row)
         agency_code = data.pop("issuing_agency", None)
+        parent_code = data.pop("parent", None)
+        if parent_code:
+            parents[data["code"]] = parent_code
         agency_id = agencies[agency_code].id if agency_code else None
 
         obj = db.scalar(select(DocumentType).where(DocumentType.code == data["code"]))
@@ -128,6 +137,10 @@ def seed_document_types(db: Session, agencies: dict[str, IssuingAgency]) -> dict
                 setattr(obj, k, v)
             obj.issuing_agency_id = agency_id
         result[data["code"]] = obj
+    db.flush()
+
+    for code, parent_code in parents.items():
+        result[code].parent_id = result[parent_code].id
     db.flush()
     return result
 
@@ -150,11 +163,13 @@ def seed_document_requirements(
                     property_type_id=ptype.id,
                     document_type_id=dtype.id,
                     is_mandatory=row["is_mandatory"],
+                    display_order=row["display_order"],
                     note=row.get("note"),
                 )
             )
         else:
             obj.is_mandatory = row["is_mandatory"]
+            obj.display_order = row["display_order"]
             obj.note = row.get("note")
     db.flush()
     return len(DOCUMENT_REQUIREMENTS)

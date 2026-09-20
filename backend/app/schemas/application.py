@@ -93,6 +93,11 @@ class MissingDocumentOut(BaseModel):
 
     code: str = Field(examples=["A02"])
     name_th: str = Field(examples=["สำเนาทะเบียนบ้านผู้แจ้ง"])
+    needs_signature: bool = Field(
+        default=False,
+        examples=[False],
+        description="true = เป็นแบบฟอร์มที่ระบบกรอกให้ สิ่งที่ยังขาดคือลายมือชื่อ ไม่ใช่ไฟล์เอกสาร",
+    )
 
 
 class ApplicationOut(BaseModel):

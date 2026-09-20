@@ -108,3 +108,83 @@ def test_accepted_file_types_come_from_the_database(db, code, expected):
     """M5 ตรวจชนิดไฟล์ — เงื่อนไขเก็บใน DB ให้ Super Admin แก้ได้ (US-09)"""
     doc = db.scalar(select(DocumentType).where(DocumentType.code == code))
     assert doc.accepted_mime_list == expected
+
+
+# ---------------------------------------------------- ที่พักแรมประเภทที่ 1 และ 2
+
+HOTEL_TYPES = ["type_1", "type_2"]
+
+
+def requirements_for(db, code: str) -> list[DocumentRequirement]:
+    ptype = db.scalar(select(PropertyType).where(PropertyType.code == code))
+    return list(
+        db.scalars(
+            select(DocumentRequirement)
+            .where(DocumentRequirement.property_type_id == ptype.id)
+            .order_by(DocumentRequirement.display_order)
+        ).all()
+    )
+
+
+@pytest.mark.parametrize("code", HOTEL_TYPES)
+def test_hotel_types_have_their_own_document_list(db, code):
+    """ประเภท 1 กับ 2 ใช้รายการเดียวกัน ต่างกันแค่ค่าธรรมเนียมตามตารางข้อ 4"""
+    codes = [r.document_type.code for r in requirements_for(db, code)]
+    assert codes == ["A06", "A07", "A08", "A09", "B02", "A03", "A04", "A05"]
+
+
+@pytest.mark.parametrize("code", HOTEL_TYPES)
+def test_rr1_attachments_are_optional_and_nested(db, code):
+    """สามฉบับที่ติ๊กว่า "มีเอกสารนี้" เป็นช่องแนบในแบบ ร.ร.1
+
+    ต้องไม่บังคับ เพราะบางฉบับไม่มีจริงตามรูปแบบกิจการ (เช่น บุคคลธรรมดา
+    ไม่มีหนังสือรับรองนิติบุคคล) ถ้าบังคับจะบล็อกการยื่นโดยไม่มีทางแก้
+    """
+    by_code = {r.document_type.code: r for r in requirements_for(db, code)}
+
+    form = by_code["A06"].document_type
+    assert form.is_system_form is True
+    assert by_code["A06"].is_mandatory is True
+
+    for child in ["A07", "A08", "A09"]:
+        assert by_code[child].is_mandatory is False, child
+        assert by_code[child].document_type.parent_id == form.id, child
+
+
+@pytest.mark.parametrize("code", HOTEL_TYPES)
+def test_hotel_needs_the_building_alteration_certificate(db, code):
+    """อ.5 เป็นเอกสารที่ต้องไปขอจากหน่วยงาน และต้องบอกข้อมูลครบตาม M4"""
+    by_code = {r.document_type.code: r for r in requirements_for(db, code)}
+    doc = by_code["B02"].document_type
+
+    assert doc.category == DocumentCategory.EXTERNAL
+    assert doc.issuing_agency is not None
+    assert doc.preparation_note
+    assert doc.estimated_days and doc.estimated_days > 0
+    assert doc.accepted_mime_list == ["application/pdf"]
+
+
+def test_shared_documents_are_declared_once_and_reused(db):
+    """เอกสารที่ใช้หลายประเภทต้องเป็นแถวเดียว ไม่ประกาศซ้ำ (3NF)"""
+    shared = ["A03", "A04", "A05"]
+    for code in shared:
+        rows = list(db.scalars(select(DocumentType).where(DocumentType.code == code)).all())
+        assert len(rows) == 1, f"{code} ต้องมีแถวเดียว"
+
+    not_hotel = {r.document_type.code: r for r in requirements_for(db, "not_hotel")}
+    hotel = {r.document_type.code: r for r in requirements_for(db, "type_1")}
+
+    for code in shared:
+        assert not_hotel[code].document_type_id == hotel[code].document_type_id
+
+
+def test_display_order_belongs_to_the_checklist_not_the_document(db):
+    """เอกสารฉบับเดียวกันอยู่คนละลำดับในแต่ละรายการได้
+
+    เป็นเหตุผลที่ display_order ต้องอยู่ที่ requirement ไม่ใช่ที่ document_type
+    """
+    not_hotel = {r.document_type.code: r.display_order for r in requirements_for(db, "not_hotel")}
+    hotel = {r.document_type.code: r.display_order for r in requirements_for(db, "type_1")}
+
+    assert not_hotel["A03"] != hotel["A03"], "ที่ดินอยู่ลำดับต่างกันในสองรายการ"
+    assert hotel["A06"] < hotel["A03"], "แบบ ร.ร.1 ต้องมาก่อนเอกสารสิทธิ์ที่ดิน"

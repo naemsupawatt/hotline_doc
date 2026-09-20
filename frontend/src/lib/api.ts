@@ -2,7 +2,8 @@
  * ตัวเรียก API ตัวเดียวของทั้งแอป — ห้าม fetch() ตรงในคอมโพเนนต์
  * เพราะจะทำให้จัดการ token / base URL / error message กระจัดกระจาย
  */
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+/** ที่อยู่ API — ประกาศที่นี่ที่เดียว ที่อื่นต้อง import ไปใช้ ห้ามอ่าน env ซ้ำ */
+export const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
 export class ApiError extends Error {
   constructor(

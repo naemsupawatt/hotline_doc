@@ -44,5 +44,10 @@ class LicenseOut(BaseModel):
     fee_currency: str | None = Field(default=None, examples=[None])
 
     issued_by_name: str = Field(examples=["สมหญิง รักงาน"])
+    has_issuer_signature: bool = Field(
+        default=False,
+        examples=[True],
+        description="โหลดรูปได้ที่ GET /applications/{application_no}/license/signature",
+    )
     local_authority_name: str = Field(examples=["เทศบาลตำบลกะรน"])
     property: PropertyOut
