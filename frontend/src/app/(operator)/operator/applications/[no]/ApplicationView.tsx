@@ -413,7 +413,10 @@ function DocumentRow({
         </div>
       </div>
 
-      {doc.files.length > 0 && (
+      {/* ไฟล์แนบของแบบฟอร์มที่ระบบกรอกให้คือรูปลายเซ็น ไม่ใช่ตัวเอกสาร จึงไม่แสดง
+          เป็นรายการไฟล์ เพราะผู้ยื่นเห็น "ลายมือชื่อ.png" แล้วเข้าใจว่านี่คือเอกสาร
+          ที่ส่งไป ทั้งที่เอกสารจริงคือหนังสือทั้งใบ ซึ่งเปิดได้จากปุ่มด้านล่าง */}
+      {!doc.is_system_form && doc.files.length > 0 && (
         <ul className="mt-3 space-y-2">
           {doc.files.map((file) => (
             <li
@@ -462,11 +465,19 @@ function DocumentRow({
             className="inline-flex min-h-11 items-center gap-2 rounded-xl border-2 border-brand-500 px-4 py-2.5 text-sm font-semibold text-brand-600 hover:bg-brand-50"
           >
             <Printer className="size-4" aria-hidden />
-            เปิดแบบฟอร์ม · ลงลายมือชื่อ · บันทึกเป็น PDF
+            {doc.files.length > 0
+              ? "เปิดหนังสือที่ลงลายมือชื่อแล้ว · พิมพ์ / บันทึกเป็น PDF"
+              : "เปิดแบบฟอร์ม · ลงลายมือชื่อ · บันทึกเป็น PDF"}
           </Link>
-          {doc.files.length === 0 && (
+          {doc.files.length === 0 ? (
             <span className="text-sm font-medium text-warn-fg">
               ยังไม่ได้ลงลายมือชื่อ — ต้องเซ็นก่อนจึงจะยื่นคำขอได้
+            </span>
+          ) : (
+            <span className="text-sm text-ink-muted">
+              ลงลายมือชื่อแล้ว
+              {doc.files[0].version_no > 1 && ` (ลายมือชื่อรุ่นที่ ${doc.files[0].version_no})`} —
+              เจ้าหน้าที่จะเห็นหนังสือฉบับนี้พร้อมลายมือชื่อ
             </span>
           )}
         </div>

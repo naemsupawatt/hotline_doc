@@ -13,7 +13,16 @@
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 
@@ -26,18 +35,22 @@ from app.models.enums import ApplicationStatus, UserRole
 from app.models.property import Property
 from app.models.user import User
 from app.schemas.application import AddressOut, PropertyOut
+from app.schemas.license import LicenseOut
 from app.schemas.officer import (
     DecisionRequest,
     OfficerApplicationOut,
     QueueItemOut,
     ReviewDocumentRequest,
 )
+from app.schemas.system_form import SystemFormOut
 from app.schemas.wizard import FeeOut
 from app.services import application as app_svc
 from app.services import classification as classify_svc
 from app.services import document as doc_svc
 from app.services import license as license_svc
+from app.services import notification as notify_svc
 from app.services import officer as officer_svc
+from app.services import system_form as form_svc
 
 router = APIRouter()
 
@@ -150,6 +163,7 @@ def decide(
     db: DbSession,
     current: CurrentOfficer,
     request: Request,
+    background: BackgroundTasks,
 ) -> OfficerApplicationOut:
     application = _load_in_scope(db, application_no, current, request)
 
@@ -167,6 +181,11 @@ def decide(
 
     db.commit()
     db.refresh(application)
+
+    # แจ้งผู้ยื่นหลัง commit และนอก request เสมอ เมลช้าหรือล่มต้องไม่ทำให้
+    # ผลที่บันทึกไปแล้วล้มเหลวตาม (ดู services/notification.py)
+    background.add_task(notify_svc.notify_status_change, application.id, current.id)
+
     return _detail(db, application)
 
 
@@ -185,6 +204,7 @@ async def issue_license(
     current: CurrentOfficer,
     request: Request,
     signature: Annotated[UploadFile, File(description="รูปลายมือชื่อผู้ลงนาม (PNG) ที่เจ้าหน้าที่เซ็นบนหน้าจอ")],
+    background: BackgroundTasks,
 ) -> OfficerApplicationOut:
     """แยกจากขั้นอนุมัติโดยตั้งใจ
 
@@ -218,6 +238,11 @@ async def issue_license(
 
     db.commit()
     db.refresh(application)
+
+    # แจ้งผู้ยื่นหลัง commit และนอก request เสมอ เมลช้าหรือล่มต้องไม่ทำให้
+    # ผลที่บันทึกไปแล้วล้มเหลวตาม (ดู services/notification.py)
+    background.add_task(notify_svc.notify_status_change, application.id, current.id)
+
     return _detail(db, application)
 
 
@@ -254,6 +279,99 @@ def open_document(
         )
 
     return FileResponse(path, media_type=row.mime_type, filename=row.original_name)
+
+
+@router.get(
+    "/applications/{application_no}/forms/{code}",
+    response_model=SystemFormOut,
+    summary="เปิดดูแบบฟอร์มที่ระบบกรอกให้ พร้อมลายมือชื่อที่ผู้ยื่นลงไว้ (อ่านอย่างเดียว)",
+    responses={
+        403: {"description": "คำขอนี้อยู่นอกเขตที่รับผิดชอบ (T-09)"},
+        404: {"description": "ไม่พบคำขอ หรือที่พักประเภทนี้ไม่ได้ใช้แบบฟอร์มรหัสนี้"},
+    },
+)
+def application_form(
+    application_no: str, code: str, db: DbSession, current: CurrentOfficer, request: Request
+) -> SystemFormOut:
+    """เจ้าหน้าที่ต้องเห็น "หนังสือที่ลงลายมือชื่อแล้ว" ไม่ใช่เห็นแต่ไฟล์รูปลายมือชื่อ
+
+    ไฟล์แนบของแบบฟอร์มที่ระบบกรอกให้คือรูปลายเซ็นเพียงอย่างเดียว เปิดดูแล้ว
+    บอกไม่ได้เลยว่าเซ็นกำกับข้อความอะไรไว้ ทั้งที่คนตรวจต้องตัดสินว่าผ่านหรือไม่ผ่าน
+    endpoint นี้จึงคืนกระดาษฉบับเดียวกับที่ผู้ยื่นเห็น ผ่าน presenter ตัวเดียวกัน
+
+    อ่านอย่างเดียวเสมอ (can_sign=False) ลายมือชื่อเป็นของผู้ยื่น เจ้าหน้าที่เซ็นแทนไม่ได้
+    guard เป็นตัวเดียวกับหน้าอื่น คำขอนอกเขตจึงเปิดไม่ได้และถูกบันทึกไว้ (T-09)
+    """
+    application = _load_in_scope(db, application_no, current, request)
+    snapshot = app_svc.classification_of(db, application)
+
+    form = form_svc.build(db, application, snapshot.property_type_id, code.upper())
+    if form is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"คำขอนี้จำแนกเป็น{snapshot.property_type.name_th} "
+                f"จึงไม่ได้ใช้แบบฟอร์มรหัส {code.upper()} "
+                "ที่พักแต่ละประเภทใช้แบบฟอร์มคนละฉบับ"
+            ),
+        )
+
+    return presenters.to_system_form_out(db, application, snapshot, form, can_sign=False)
+
+
+@router.get(
+    "/applications/{application_no}/license",
+    response_model=LicenseOut,
+    summary="เอกสารที่ออกให้คำขอนี้ สำหรับเจ้าหน้าที่เปิดดูและพิมพ์ (M10)",
+    responses={
+        403: {"description": "คำขอนี้อยู่นอกเขตที่รับผิดชอบ (T-09)"},
+        404: {"description": "ยังไม่ได้ออกเอกสารสำหรับคำขอนี้"},
+    },
+)
+def application_license(
+    application_no: str, db: DbSession, current: CurrentOfficer, request: Request
+) -> LicenseOut:
+    """เจ้าหน้าที่ต้องเปิดดูเอกสารที่ตัวเองลงนามออกไปได้
+
+    เดิมเปิดได้เฉพาะเจ้าของคำขอ เจ้าหน้าที่จึงกดออกเอกสารแล้วเห็นแค่เลขที่ ทั้งที่
+    เป็นคนลงนามเอง และเป็นคนที่ผู้ยื่นจะโทรมาถามเมื่อข้อความบนเอกสารผิด
+    ใช้ presenter ตัวเดียวกับฝั่งผู้ยื่น สองฝั่งจึงเห็นเอกสารใบเดียวกันเสมอ
+    """
+    application = _load_in_scope(db, application_no, current, request)
+
+    row = license_svc.existing(db, application.id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="คำขอนี้ยังไม่ได้ออกเอกสาร กรุณาอนุมัติและลงนามออกเอกสารก่อน",
+        )
+
+    return presenters.to_license_out_for(db, application, row)
+
+
+@router.get(
+    "/applications/{application_no}/license/signature",
+    summary="รูปลายมือชื่อผู้ลงนามบนเอกสารที่ออกให้ สำหรับแสดงบนหน้าพิมพ์ (M10)",
+    responses={
+        403: {"description": "คำขอนี้อยู่นอกเขตที่รับผิดชอบ (T-09)"},
+        404: {"description": "ยังไม่ได้ออกเอกสาร หรือเอกสารใบนี้ไม่มีลายมือชื่อเก็บไว้"},
+    },
+)
+def license_signature(
+    application_no: str, db: DbSession, current: CurrentOfficer, request: Request
+) -> FileResponse:
+    """แยกจาก LicenseOut ด้วยเหตุผลเดียวกับฝั่งผู้ยื่น — ไม่ต้องแบกรูปมากับ JSON ทุกครั้ง"""
+    application = _load_in_scope(db, application_no, current, request)
+
+    row = license_svc.existing(db, application.id)
+    path = license_svc.signature_path(row) if row else None
+    if path is None or not path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="เอกสารใบนี้ไม่มีลายมือชื่อผู้ลงนามเก็บไว้ในระบบ",
+        )
+
+    return FileResponse(path, media_type="image/png", filename=f"{row.license_no}.png")
 
 
 # ---------------------------------------------------------------- ตัวช่วยภายใน

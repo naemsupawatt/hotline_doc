@@ -4,9 +4,10 @@
  * ชนิดข้อมูลต้องตรงกับ backend/app/schemas/officer.py
  * ทุกเส้นทางต้องแนบ token และถูกกรองด้วยเขตที่เจ้าหน้าที่สังกัดเสมอ (T-09)
  */
-import { BASE, api } from "@/lib/api";
-import type { ApplicationProperty } from "@/lib/applications";
+import { ApiError, BASE, api } from "@/lib/api";
+import type { ApplicationProperty, LicenseDocument } from "@/lib/applications";
 import { getToken } from "@/lib/auth";
+import type { SystemForm } from "@/lib/systemForm";
 import type { ClassifyResult } from "@/lib/wizard";
 
 export type QueueItem = {
@@ -101,22 +102,70 @@ export function issueLicense(applicationNo: string, signature: Blob) {
 }
 
 /**
+ * แบบฟอร์มที่ระบบกรอกให้ ฉบับที่เจ้าหน้าที่เปิดดู — อ่านอย่างเดียว
+ *
+ * เจ้าหน้าที่ต้องเห็น "หนังสือที่ลงลายมือชื่อแล้ว" ฉบับเดียวกับที่ผู้ยื่นเห็น
+ * ไม่ใช่เห็นแต่ไฟล์รูปลายเซ็นซึ่งบอกไม่ได้ว่าเซ็นกำกับข้อความอะไรไว้
+ * ฝั่งเซิร์ฟเวอร์ใช้ presenter ตัวเดียวกับของผู้ยื่น ชนิดข้อมูลจึงเป็น SystemForm เดิม
+ */
+export function getSystemForm(applicationNo: string, code: string) {
+  return api<SystemForm>(
+    `/officer/applications/${encodeURIComponent(applicationNo)}/forms/${code}`,
+    authed(),
+  );
+}
+
+/**
+ * โหลดไฟล์แนบมาเป็น URL ชั่วคราวสำหรับแสดงบนหน้า (เช่น รูปลายมือชื่อบนแบบฟอร์ม)
+ *
+ * ฝาแฝดฝั่งเจ้าหน้าที่ของ fetchDocumentFileUrl ใน lib/applications.ts
+ * ใส่ URL ของ API ลงใน <img src> ตรง ๆ ไม่ได้ เพราะปลายทางต้องการ
+ * Authorization header ผู้เรียกต้อง URL.revokeObjectURL คืนเมื่อเลิกใช้
+ */
+export async function fetchDocumentFileUrl(
+  applicationNo: string,
+  fileId: number,
+): Promise<string> {
+  const url = `${BASE}/officer/applications/${encodeURIComponent(applicationNo)}/documents/file/${fileId}`;
+
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+  if (!res.ok) throw new ApiError("เปิดไฟล์แนบไม่ได้ กรุณาลองใหม่อีกครั้ง", res.status);
+
+  return URL.createObjectURL(await res.blob());
+}
+
+/**
+ * เอกสารที่ออกให้คำขอนี้ ฉบับที่เจ้าหน้าที่เปิดดู (M10)
+ *
+ * เจ้าหน้าที่เป็นคนลงนามออกเอกสาร จึงต้องเปิดดูใบที่ออกไปได้ ไม่ใช่เห็นแค่เลขที่
+ * ฝั่งเซิร์ฟเวอร์ใช้ presenter ตัวเดียวกับของผู้ยื่น ชนิดข้อมูลจึงเป็นตัวเดิม
+ */
+export function getLicense(applicationNo: string) {
+  return api<LicenseDocument>(
+    `/officer/applications/${encodeURIComponent(applicationNo)}/license`,
+    authed(),
+  );
+}
+
+/** รูปลายมือชื่อผู้ลงนาม — ฝาแฝดฝั่งเจ้าหน้าที่ของ licenseSignatureUrl ใน lib/applications.ts */
+export async function licenseSignatureUrl(applicationNo: string): Promise<string> {
+  const url = `${BASE}/officer/applications/${encodeURIComponent(applicationNo)}/license/signature`;
+
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+  if (!res.ok) throw new ApiError("โหลดลายมือชื่อผู้ลงนามไม่ได้", res.status);
+
+  return URL.createObjectURL(await res.blob());
+}
+
+/**
  * เปิดไฟล์เอกสารในแท็บใหม่
  *
  * ใช้ fetch แทน <a href> เพราะปลายทางต้องการ Authorization header
  * ซึ่งแท็กลิงก์ธรรมดาแนบไปด้วยไม่ได้ จึงต้องโหลดเป็น blob แล้วค่อยเปิด
  */
-export async function openDocumentFile(
-  applicationNo: string,
-  fileId: number,
-): Promise<void> {
-  const url = `${BASE}/officer/applications/${encodeURIComponent(applicationNo)}/documents/file/${fileId}`;
-
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
-  if (!res.ok) throw new Error("เปิดไฟล์ไม่ได้");
-
-  const objectUrl = URL.createObjectURL(await res.blob());
-  window.open(objectUrl, "_blank", "noopener");
+export async function openDocumentFile(applicationNo: string, fileId: number): Promise<void> {
+  const url = await fetchDocumentFileUrl(applicationNo, fileId);
+  window.open(url, "_blank", "noopener");
   // ปล่อยหน่วยความจำคืนหลังเบราว์เซอร์เปิดไฟล์เสร็จ
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

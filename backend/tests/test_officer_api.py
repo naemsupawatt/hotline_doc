@@ -777,3 +777,146 @@ def test_m11_is_restricted_to_central_and_admin(client, owner, officer_a):
     assert client.get("/api/v1/reports/overview", headers=auth(owner)).status_code == 403
     assert client.get("/api/v1/reports/overview", headers=auth(officer_a)).status_code == 403
     assert client.get("/api/v1/reports/overview").status_code == 401
+
+
+# ---------------------------------------------- แบบฟอร์มที่ระบบกรอกให้ ฝั่งเจ้าหน้าที่
+
+
+def test_officer_sees_the_signed_paper_not_only_the_signature_image(client, owner, officer_a):
+    """คนที่ตัดสินว่าเอกสารผ่านหรือไม่ผ่าน ต้องเห็นหนังสือที่ลงลายมือชื่อแล้ว
+
+    ไฟล์แนบของแบบฟอร์มที่ระบบกรอกให้คือรูปลายเซ็นเพียงอย่างเดียว เปิดดูแล้ว
+    บอกไม่ได้ว่าเซ็นกำกับข้อความอะไรไว้
+    """
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    res = client.get(f"/api/v1/officer/applications/{no}/forms/A01", headers=auth(officer_a))
+
+    assert res.status_code == 200, res.text
+    form = res.json()
+    assert form["form_code"] == "A01"
+    assert form["application_no"] == no
+    assert form["property"]["name"] == "ที่พักเขต PKT-CITY"
+    assert form["signature"] is not None, "ต้องบอกว่าลายมือชื่ออยู่ไฟล์ไหน ไม่งั้นวาดลงกระดาษไม่ได้"
+    assert form["can_sign"] is False, "ลายมือชื่อเป็นของผู้ยื่น เจ้าหน้าที่เซ็นแทนไม่ได้"
+
+
+def test_both_sides_read_the_very_same_paper(client, owner, officer_a):
+    """สองฝั่งต้องเห็นกระดาษใบเดียวกัน ไม่งั้นเถียงกันว่าตรวจคนละฉบับ"""
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    mine = client.get(f"/api/v1/applications/{no}/forms/A01", headers=auth(owner)).json()
+    theirs = client.get(
+        f"/api/v1/officer/applications/{no}/forms/A01", headers=auth(officer_a)
+    ).json()
+
+    # can_sign เป็นเรื่องของสิทธิ์คนเปิด ไม่ใช่เนื้อหาบนกระดาษ
+    assert {k: v for k, v in theirs.items() if k != "can_sign"} == {
+        k: v for k, v in mine.items() if k != "can_sign"
+    }
+
+
+def test_t09_form_page_is_blocked_across_authorities_and_logged(client, owner, officer_a):
+    """หน้ากระดาษก็เป็นการเข้าถึงคำขอ กันข้ามเขตต้องครอบถึงด้วย"""
+    other = open_application(client, owner, "KRN-SUB")
+    fill_and_submit(client, owner, other)
+
+    res = client.get(f"/api/v1/officer/applications/{other}/forms/A01", headers=auth(officer_a))
+
+    assert res.status_code == 403
+    with SessionLocal() as db:
+        logged = db.scalar(
+            select(AuditLog)
+            .where(
+                AuditLog.actor_id.in_(_test_users(db)),
+                AuditLog.action == "officer.cross_authority_denied",
+            )
+            .order_by(AuditLog.id.desc())
+        )
+    assert logged is not None and logged.outcome == "denied"
+    assert other in logged.detail
+
+
+def test_form_code_the_property_type_does_not_use_says_why(client, owner, officer_a):
+    """6 ห้อง 24 คน = ไม่เข้าข่ายโรงแรม จึงไม่มีแบบ ร.ร.1 ให้เปิด"""
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    res = client.get(f"/api/v1/officer/applications/{no}/forms/A06", headers=auth(officer_a))
+
+    assert res.status_code == 404
+    assert "ไม่เข้าข่ายโรงแรม" in res.json()["detail"]
+
+
+# ---------------------------------------------- เอกสารที่ออกให้ ฝั่งเจ้าหน้าที่
+
+
+def test_officer_can_open_the_document_they_signed(client, owner, officer_a):
+    """คนที่ลงนามออกเอกสารต้องเปิดดูใบที่ออกไปได้ ไม่ใช่เห็นแค่เลขที่"""
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+    approve_fully(client, owner, officer_a, no)
+    issued = issue(client, officer_a, no).json()
+
+    res = client.get(f"/api/v1/officer/applications/{no}/license", headers=auth(officer_a))
+
+    assert res.status_code == 200, res.text
+    doc = res.json()
+    assert doc["license_no"] == issued["license_no"]
+    assert doc["application_no"] == no
+    assert doc["has_issuer_signature"] is True
+
+    signature = client.get(
+        f"/api/v1/officer/applications/{no}/license/signature", headers=auth(officer_a)
+    )
+    assert signature.status_code == 200
+    assert signature.content == PNG, "ต้องเป็นลายมือชื่อที่เจ้าหน้าที่เซ็นตอนออกเอกสาร"
+
+
+def test_officer_and_operator_see_the_same_document(client, owner, officer_a):
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+    approve_fully(client, owner, officer_a, no)
+    issue(client, officer_a, no)
+
+    theirs = client.get(
+        f"/api/v1/officer/applications/{no}/license", headers=auth(officer_a)
+    ).json()
+    mine = client.get(f"/api/v1/applications/{no}/license", headers=auth(owner)).json()
+
+    assert theirs == mine
+
+
+def test_officer_document_view_is_blocked_across_authorities(client, owner, officer_a, officer_b):
+    """T-09 ครอบถึงหน้าเอกสารด้วย ไม่ใช่แค่หน้าคำขอ"""
+    other = open_application(client, owner, "KRN-SUB")
+    fill_and_submit(client, owner, other)
+    approve_fully(client, owner, officer_b, other)
+    issue(client, officer_b, other)
+
+    assert (
+        client.get(
+            f"/api/v1/officer/applications/{other}/license", headers=auth(officer_a)
+        ).status_code
+        == 403
+    )
+    assert (
+        client.get(
+            f"/api/v1/officer/applications/{other}/license/signature", headers=auth(officer_a)
+        ).status_code
+        == 403
+    )
+
+
+def test_officer_document_view_says_what_to_do_before_it_is_issued(client, owner, officer_a):
+    """อนุมัติแล้วแต่ยังไม่ลงนาม ต้องบอกให้ชัดว่าต้องทำอะไรต่อ (NFR Usability)"""
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+    approve_fully(client, owner, officer_a, no)
+
+    res = client.get(f"/api/v1/officer/applications/{no}/license", headers=auth(officer_a))
+
+    assert res.status_code == 404
+    assert "ลงนามออกเอกสาร" in res.json()["detail"]

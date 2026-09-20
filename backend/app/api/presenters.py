@@ -5,6 +5,8 @@
 สองที่นี้จะค่อย ๆ เพี้ยนจากกัน แล้วหน้าจอที่ใช้ทั้งสองจะพังแบบหาสาเหตุยาก
 """
 
+from sqlalchemy import select
+
 from app.core.config import settings
 from app.models.document import DocumentFile
 from app.models.enums import DocumentCategory, DocumentStatus
@@ -176,4 +178,95 @@ def to_license_out(db, row, application, prop, authority, holder, issuer):
         issued_by_name=issuer.full_name if issuer else "-",
         local_authority_name=authority.name if authority else "-",
         property=to_property_out(prop, authority.name if authority else "-"),
+    )
+
+
+def to_license_out_for(db, application, row):
+    """โหลดของประกอบทั้งหมดของเอกสารหนึ่งใบแล้วแปลงเป็น schema
+
+    ผู้ยื่นและเจ้าหน้าที่ต้องเห็นเอกสารใบเดียวกัน ด้วยเหตุผลเดียวกับ
+    to_system_form_out — ถ้าสอง endpoint ประกอบเอง วันหนึ่งจะเห็นคนละใบ
+    """
+    from app.models.authority import LocalAuthority
+    from app.models.property import Operator, Property
+    from app.models.user import User
+
+    prop = db.get(Property, application.property_id)
+    authority = db.get(LocalAuthority, application.local_authority_id)
+    holder = db.scalar(
+        select(User)
+        .join(Operator, Operator.user_id == User.id)
+        .where(Operator.id == application.operator_id)
+    )
+    issuer = db.get(User, row.issued_by_id)
+
+    return to_license_out(db, row, application, prop, authority, holder, issuer)
+
+
+def to_system_form_out(db, application, snapshot, form, *, can_sign: bool):
+    """ประกอบ "กระดาษหนึ่งใบ" ของแบบฟอร์มที่ระบบกรอกให้ (A01 / A06)
+
+    อยู่ที่นี่เพราะทั้งหน้าผู้ยื่นและหน้าเจ้าหน้าที่ต้องเห็นกระดาษฉบับเดียวกัน
+    เจ้าหน้าที่ที่ต้องตัดสินว่าเอกสารผ่านหรือไม่ผ่าน ควรเห็น "หนังสือที่ลงลายมือชื่อแล้ว"
+    ไม่ใช่เห็นแต่ไฟล์รูปลายมือชื่อลอย ๆ ซึ่งบอกไม่ได้เลยว่าเซ็นกำกับอะไรไว้
+    ถ้าปล่อยให้สอง endpoint ประกอบข้อมูลกันเอง วันหนึ่งสองฝั่งจะเห็นคนละฉบับ
+
+    can_sign บอกหน้าจอว่าเปิดให้ลงลายมือชื่อได้หรือยัง — ฝั่งเจ้าหน้าที่ส่ง False
+    เสมอ เพราะลายมือชื่อเป็นของผู้ยื่น เจ้าหน้าที่เซ็นแทนไม่ได้
+    """
+    from app.models.authority import LocalAuthority
+    from app.models.property import Property
+    from app.schemas.system_form import (
+        ApplicantOut,
+        FormAttachmentOut,
+        SignatureOut,
+        SystemFormOut,
+    )
+    from app.schemas.wizard import FeeOut
+
+    ptype = snapshot.property_type
+    prop = db.get(Property, application.property_id)
+    authority = db.get(LocalAuthority, application.local_authority_id)
+    fee = svc.current_fee(db, ptype.id) if ptype.requires_license else None
+
+    return SystemFormOut(
+        form_code=form.document_type.code,
+        # ชื่อแบบฟอร์มมาจากตารางเอกสาร ไม่ได้เขียนไว้ในโค้ด — Super Admin แก้ได้ (US-09)
+        title=form.document_type.name_th,
+        application_no=application.application_no,
+        status=application.status,
+        local_authority_name=authority.name if authority else "-",
+        filed_on=application.submitted_at,
+        property_type_name=ptype.name_th,
+        requires_license=ptype.requires_license,
+        fee=FeeOut(**vars(fee)) if fee else None,
+        applicant=ApplicantOut(
+            display_name=form.operator.display_name,
+            is_juristic=form.operator.is_juristic,
+            juristic_reg_no=form.operator.juristic_reg_no,
+            national_id_masked=form.applicant.national_id_masked,
+            phone=form.operator.contact_phone or form.applicant.phone,
+            email=form.operator.contact_email or form.applicant.email,
+        ),
+        property=to_property_out(prop, authority.name if authority else "-"),
+        attachments=[
+            FormAttachmentOut(
+                code=a.code,
+                name_th=a.name_th,
+                is_mandatory=a.is_mandatory,
+                is_attached=a.is_attached,
+            )
+            for a in form.attachments
+        ],
+        signature=(
+            SignatureOut(
+                file_id=form.signature.id,
+                version_no=form.signature.version_no,
+                status=form.signature.status,
+                signed_at=form.signature.created_at,
+            )
+            if form.signature
+            else None
+        ),
+        can_sign=can_sign,
     )

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { FormView } from "./FormView";
+import { SystemFormView } from "@/components/common/SystemFormView";
 
 export const metadata: Metadata = {
   title: "แบบฟอร์มของคำขอ",
@@ -13,5 +13,5 @@ export default async function FormPage({
   params: Promise<{ no: string; code: string }>;
 }) {
   const { no, code } = await params;
-  return <FormView applicationNo={decodeURIComponent(no)} code={decodeURIComponent(code)} />;
+  return <SystemFormView applicationNo={decodeURIComponent(no)} code={decodeURIComponent(code)} />;
 }

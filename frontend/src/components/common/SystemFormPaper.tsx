@@ -11,6 +11,10 @@ import { StatusPill } from "@/components/common/StatusPill";
 import { ApiError } from "@/lib/api";
 import { fetchDocumentFileUrl, thaiDate } from "@/lib/applications";
 import {
+  fetchDocumentFileUrl as fetchOfficerFileUrl,
+  getSystemForm as getOfficerSystemForm,
+} from "@/lib/officer";
+import {
   type SystemForm,
   formatJuristicNo,
   getSystemForm,
@@ -39,21 +43,36 @@ type Props = {
   /** คำเรียกผู้ลงชื่อบนกระดาษ — หนังสือแจ้งฯ ใช้ "ผู้แจ้ง" ส่วน ร.ร.1 ใช้ "ผู้ขออนุญาต" */
   signerLabel: string;
   body: (form: SystemForm) => ReactNode;
+  /**
+   * ใครเป็นคนเปิดดู — กระดาษเป็นใบเดียวกัน ต่างกันแค่สิ่งที่ทำได้รอบ ๆ
+   *
+   * operator (ค่าตั้งต้น) ลงลายมือชื่อและแก้ชื่อผู้ยื่นได้
+   * officer  อ่านอย่างเดียว เพราะลายมือชื่อเป็นของผู้ยื่น เจ้าหน้าที่เซ็นแทนไม่ได้
+   *          และเรียก API คนละเส้น (ของเจ้าหน้าที่ถูกกรองด้วยเขตที่สังกัด T-09)
+   */
+  viewer?: "operator" | "officer";
 };
 
-export function SystemFormPaper({ applicationNo, code, signerLabel, body }: Props) {
+export function SystemFormPaper({
+  applicationNo,
+  code,
+  signerLabel,
+  body,
+  viewer = "operator",
+}: Props) {
+  const asOfficer = viewer === "officer";
   const [form, setForm] = useState<SystemForm | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
 
   const load = useCallback(
     () =>
-      getSystemForm(applicationNo, code)
+      (asOfficer ? getOfficerSystemForm : getSystemForm)(applicationNo, code)
         .then(setForm)
         .catch((err) =>
           setError(err instanceof ApiError ? err.message : "เปิดแบบฟอร์มไม่ได้ กรุณาลองใหม่"),
         ),
-    [applicationNo, code],
+    [applicationNo, code, asOfficer],
   );
 
   useEffect(() => {
@@ -67,7 +86,7 @@ export function SystemFormPaper({ applicationNo, code, signerLabel, body }: Prop
     let cancelled = false;
 
     if (fileId !== undefined) {
-      fetchDocumentFileUrl(applicationNo, fileId)
+      (asOfficer ? fetchOfficerFileUrl : fetchDocumentFileUrl)(applicationNo, fileId)
         .then((created) => {
           url = created;
           if (cancelled) URL.revokeObjectURL(created);
@@ -83,7 +102,7 @@ export function SystemFormPaper({ applicationNo, code, signerLabel, body }: Prop
       setSignatureUrl(null);
       if (url) URL.revokeObjectURL(url);
     };
-  }, [applicationNo, form?.signature?.file_id]);
+  }, [applicationNo, form?.signature?.file_id, asOfficer]);
 
   if (error) {
     return (
@@ -93,7 +112,7 @@ export function SystemFormPaper({ applicationNo, code, signerLabel, body }: Prop
         <p role="alert" className="mt-2 text-ink-muted">
           {error}
         </p>
-        <BackLink applicationNo={applicationNo} className="mt-6" />
+        <BackLink applicationNo={applicationNo} viewer={viewer} className="mt-6" />
       </main>
     );
   }
@@ -109,7 +128,7 @@ export function SystemFormPaper({ applicationNo, code, signerLabel, body }: Prop
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-12 print:max-w-none print:p-0">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <BackLink applicationNo={applicationNo} />
+        <BackLink applicationNo={applicationNo} viewer={viewer} />
         <button
           type="button"
           onClick={() => window.print()}
@@ -177,48 +196,92 @@ export function SystemFormPaper({ applicationNo, code, signerLabel, body }: Prop
         </footer>
       </article>
 
-      <ApplicantPanel form={form} applicationNo={applicationNo} onSaved={load} />
-
-      {/* ---------- ส่วนที่ไม่ถูกพิมพ์: ลงลายมือชื่อในระบบ ---------- */}
-      <section className="mt-6 rounded-card border border-line bg-surface p-5 shadow-card print:hidden">
-        <div className="flex flex-wrap items-center gap-2">
-          <PenLine className="size-5 text-brand-600" aria-hidden />
-          <h2 className="text-lg font-semibold">ลายมือชื่อ{signerLabel}</h2>
-          {form.signature && (
-            <StatusPill status={form.signature.status as DocumentStatus} className="ml-auto" />
-          )}
-        </div>
-
-        {form.signature ? (
+      {/* เจ้าหน้าที่อ่านอย่างเดียว: ไม่มีแผงแก้ชื่อผู้ยื่นและไม่มีที่ให้เซ็น
+          เหลือเพียงสรุปว่าลายมือชื่อที่เห็นบนกระดาษเป็นรุ่นไหน ลงไว้เมื่อใด */}
+      {asOfficer ? (
+        <section className="mt-6 rounded-card border border-line bg-surface p-5 shadow-card print:hidden">
+          <div className="flex flex-wrap items-center gap-2">
+            <PenLine className="size-5 text-brand-600" aria-hidden />
+            <h2 className="text-lg font-semibold">ลายมือชื่อ{signerLabel}</h2>
+            {form.signature && (
+              <StatusPill status={form.signature.status as DocumentStatus} className="ml-auto" />
+            )}
+          </div>
           <p className="mt-2 text-sm text-ink-muted">
-            ลงลายมือชื่อไว้แล้วเมื่อ {thaiDate(form.signature.signed_at)}
-            {form.signature.version_no > 1 && ` (รุ่นที่ ${form.signature.version_no})`} —
-            ลายมือชื่อจะปรากฏบนแบบฟอร์มด้านบนทั้งบนหน้าจอและตอนพิมพ์
+            {form.signature
+              ? `ผู้ยื่นลงลายมือชื่อไว้เมื่อ ${thaiDate(form.signature.signed_at)}${
+                  form.signature.version_no > 1 ? ` (รุ่นที่ ${form.signature.version_no})` : ""
+                } — ผ่าน/ไม่ผ่าน ตรวจได้ที่หน้าคำขอ`
+              : "ผู้ยื่นยังไม่ได้ลงลายมือชื่อ หนังสือฉบับนี้จึงยังไม่มีผล"}
           </p>
-        ) : (
-          <p className="mt-2 text-sm text-ink-muted">
-            <span className="font-medium text-warn-fg">ต้องลงลายมือชื่อก่อนจึงจะยื่นคำขอได้</span>{" "}
-            เพราะลายมือชื่อเป็นสิ่งที่ทำให้เอกสารฉบับนี้มีผล ถ้าถนัดเซ็นบนกระดาษ
-            ให้พิมพ์ออกไปเซ็นแล้วถ่ายรูปมาอัปโหลดได้
-          </p>
-        )}
+        </section>
+      ) : (
+        <>
+          <ApplicantPanel form={form} applicationNo={applicationNo} onSaved={load} />
 
-        {form.can_sign ? (
-          <SignaturePad
-            className="mt-4"
-            onSave={async (png) => {
-              await saveSignature(applicationNo, png, form.form_code);
-              await load();
-            }}
+          <SigningPanel
+            form={form}
+            applicationNo={applicationNo}
+            signerLabel={signerLabel}
+            onSigned={load}
           />
-        ) : (
-          <p className="mt-4 rounded-xl bg-canvas px-4 py-3 text-sm text-ink-muted">
-            คำขอนี้ยื่นไปแล้ว จึงแก้ลายมือชื่อไม่ได้ หากเจ้าหน้าที่ขอให้แก้ไข
-            ระบบจะเปิดให้ลงลายมือชื่อใหม่เอง
-          </p>
-        )}
-      </section>
+        </>
+      )}
     </main>
+  );
+}
+
+/** แผงลงลายมือชื่อของผู้ยื่น — ไม่ถูกพิมพ์ไปกับกระดาษ */
+function SigningPanel({
+  form,
+  applicationNo,
+  signerLabel,
+  onSigned,
+}: {
+  form: SystemForm;
+  applicationNo: string;
+  signerLabel: string;
+  onSigned: () => Promise<unknown>;
+}) {
+  return (
+    <section className="mt-6 rounded-card border border-line bg-surface p-5 shadow-card print:hidden">
+      <div className="flex flex-wrap items-center gap-2">
+        <PenLine className="size-5 text-brand-600" aria-hidden />
+        <h2 className="text-lg font-semibold">ลายมือชื่อ{signerLabel}</h2>
+        {form.signature && (
+          <StatusPill status={form.signature.status as DocumentStatus} className="ml-auto" />
+        )}
+      </div>
+
+      {form.signature ? (
+        <p className="mt-2 text-sm text-ink-muted">
+          ลงลายมือชื่อไว้แล้วเมื่อ {thaiDate(form.signature.signed_at)}
+          {form.signature.version_no > 1 && ` (รุ่นที่ ${form.signature.version_no})`} —
+          ลายมือชื่อจะปรากฏบนแบบฟอร์มด้านบนทั้งบนหน้าจอและตอนพิมพ์
+        </p>
+      ) : (
+        <p className="mt-2 text-sm text-ink-muted">
+          <span className="font-medium text-warn-fg">ต้องลงลายมือชื่อก่อนจึงจะยื่นคำขอได้</span>{" "}
+          เพราะลายมือชื่อเป็นสิ่งที่ทำให้เอกสารฉบับนี้มีผล ถ้าถนัดเซ็นบนกระดาษ
+          ให้พิมพ์ออกไปเซ็นแล้วถ่ายรูปมาอัปโหลดได้
+        </p>
+      )}
+
+      {form.can_sign ? (
+        <SignaturePad
+          className="mt-4"
+          onSave={async (png) => {
+            await saveSignature(applicationNo, png, form.form_code);
+            await onSigned();
+          }}
+        />
+      ) : (
+        <p className="mt-4 rounded-xl bg-canvas px-4 py-3 text-sm text-ink-muted">
+          คำขอนี้ยื่นไปแล้ว จึงแก้ลายมือชื่อไม่ได้ หากเจ้าหน้าที่ขอให้แก้ไข
+          ระบบจะเปิดให้ลงลายมือชื่อใหม่เอง
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -369,10 +432,18 @@ function ApplicantPanel({
   );
 }
 
-function BackLink({ applicationNo, className }: { applicationNo: string; className?: string }) {
+function BackLink({
+  applicationNo,
+  viewer,
+  className,
+}: {
+  applicationNo: string;
+  viewer: "operator" | "officer";
+  className?: string;
+}) {
   return (
     <Link
-      href={`/operator/applications/${applicationNo}`}
+      href={`/${viewer}/applications/${applicationNo}`}
       className={cn(
         "inline-flex items-center gap-2 text-sm font-semibold text-brand-600 underline underline-offset-4",
         className,

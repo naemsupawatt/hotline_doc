@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { LicenseView } from "./LicenseView";
+import { LicenseView } from "@/components/common/LicenseView";
 
 export const metadata: Metadata = {
   title: "เอกสารอนุญาต",

@@ -17,11 +17,24 @@ import {
  * components/common/SystemFormPaper.tsx) ต่างกันแค่ข้อความในแบบฟอร์ม
  * ไฟล์นี้จึงมีแต่ "เนื้อความบนกระดาษ" ของแต่ละฉบับ
  *
+ * อยู่ใน components/common ไม่ใช่ใต้เส้นทางของผู้ยื่น เพราะหน้าเจ้าหน้าที่ใช้ตัวเดียวกัน
+ * (viewer="officer") คนตรวจต้องเห็นหนังสือที่ลงลายมือชื่อแล้วฉบับเดียวกับที่ผู้ยื่นเห็น
+ * ไม่ใช่เห็นแต่ไฟล์รูปลายเซ็น ถ้าทำสองไฟล์แยกกัน วันหนึ่งสองฝั่งจะเห็นคนละฉบับ
+ *
  * ตั้งใจไม่พิมพ์เกณฑ์ตัวเลข (ไม่เกินกี่ห้อง กี่คน) ลงบนกระดาษ เพราะเกณฑ์อยู่ใน
  * ฐานข้อมูลและ Super Admin แก้ได้ (US-09) ถ้าพิมพ์ตัวเลขตายตัวลงแบบฟอร์ม
  * วันที่เกณฑ์เปลี่ยน เอกสารจะพูดไม่ตรงกับกฎที่ระบบใช้จริง
  */
-export function FormView({ applicationNo, code }: { applicationNo: string; code: string }) {
+export function SystemFormView({
+  applicationNo,
+  code,
+  viewer = "operator",
+}: {
+  applicationNo: string;
+  code: string;
+  /** operator = ลงลายมือชื่อได้ · officer = อ่านอย่างเดียว */
+  viewer?: "operator" | "officer";
+}) {
   const upper = code.toUpperCase();
 
   if (upper === NOTICE_FORM_CODE) {
@@ -31,6 +44,7 @@ export function FormView({ applicationNo, code }: { applicationNo: string; code:
         code={NOTICE_FORM_CODE}
         signerLabel="ผู้แจ้ง"
         body={noticeBody}
+        viewer={viewer}
       />
     );
   }
@@ -42,6 +56,7 @@ export function FormView({ applicationNo, code }: { applicationNo: string; code:
         code={HOTEL_FORM_CODE}
         signerLabel="ผู้ขออนุญาต"
         body={hotelBody}
+        viewer={viewer}
       />
     );
   }

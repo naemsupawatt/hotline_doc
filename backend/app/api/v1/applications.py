@@ -33,8 +33,6 @@ from app.schemas.license import LicenseOut
 from app.schemas.system_form import (
     ApplicantIn,
     ApplicantOut,
-    FormAttachmentOut,
-    SignatureOut,
     SystemFormOut,
 )
 from app.schemas.wizard import FeeOut
@@ -194,16 +192,7 @@ def application_license(
             detail="คำขอนี้ยังไม่ได้ออกเอกสาร กรุณารอเจ้าหน้าที่ดำเนินการ",
         )
 
-    prop = db.get(Property, application.property_id)
-    authority = db.get(LocalAuthority, application.local_authority_id)
-    holder = db.scalar(
-        select(User)
-        .join(Operator, Operator.user_id == User.id)
-        .where(Operator.id == application.operator_id)
-    )
-    issuer = db.get(User, row.issued_by_id)
-
-    return presenters.to_license_out(db, row, application, prop, authority, holder, issuer)
+    return presenters.to_license_out_for(db, application, row)
 
 
 @router.get(
@@ -262,44 +251,8 @@ def application_form(
             ),
         )
 
-    ptype = snapshot.property_type
-    prop = db.get(Property, application.property_id)
-    authority = db.get(LocalAuthority, application.local_authority_id)
-    fee = classify_svc.current_fee(db, ptype.id) if ptype.requires_license else None
-
-    return SystemFormOut(
-        form_code=form.document_type.code,
-        # ชื่อแบบฟอร์มมาจากตารางเอกสาร ไม่ได้เขียนไว้ในโค้ด — Super Admin แก้ได้ (US-09)
-        title=form.document_type.name_th,
-        application_no=application.application_no,
-        status=application.status,
-        local_authority_name=authority.name if authority else "-",
-        filed_on=application.submitted_at,
-        property_type_name=ptype.name_th,
-        requires_license=ptype.requires_license,
-        fee=FeeOut(**vars(fee)) if fee else None,
-        applicant=_applicant_out(form),
-        property=presenters.to_property_out(prop, authority.name if authority else "-"),
-        attachments=[
-            FormAttachmentOut(
-                code=a.code,
-                name_th=a.name_th,
-                is_mandatory=a.is_mandatory,
-                is_attached=a.is_attached,
-            )
-            for a in form.attachments
-        ],
-        signature=(
-            SignatureOut(
-                file_id=form.signature.id,
-                version_no=form.signature.version_no,
-                status=form.signature.status,
-                signed_at=form.signature.created_at,
-            )
-            if form.signature
-            else None
-        ),
-        can_sign=app_svc.is_editable(application),
+    return presenters.to_system_form_out(
+        db, application, snapshot, form, can_sign=app_svc.is_editable(application)
     )
 
 
@@ -380,17 +333,6 @@ def _require_classification(db: DbSession, application: Application) -> Applicat
             detail="ข้อมูลคำขอไม่สมบูรณ์ กรุณาติดต่อเจ้าหน้าที่",
         )
     return snapshot
-
-
-def _applicant_out(form: form_svc.SystemForm) -> ApplicantOut:
-    return ApplicantOut(
-        display_name=form.operator.display_name,
-        is_juristic=form.operator.is_juristic,
-        juristic_reg_no=form.operator.juristic_reg_no,
-        national_id_masked=form.applicant.national_id_masked,
-        phone=form.operator.contact_phone or form.applicant.phone,
-        email=form.operator.contact_email or form.applicant.email,
-    )
 
 
 def _clean_juristic_no(payload: ApplicantIn) -> str | None:

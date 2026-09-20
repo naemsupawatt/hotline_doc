@@ -6,6 +6,7 @@ import {
   Clock,
   ExternalLink,
   FileCheck,
+  FileText,
   PencilLine,
   Send,
   X,
@@ -238,9 +239,20 @@ function DocumentReviewRow({
       {doc.is_system_form && (
         <p className="mt-2 text-sm text-ink-muted">
           {doc.files.length > 0
-            ? "แบบฟอร์มที่ระบบสร้างจากข้อมูลคำขอ ไฟล์ที่แนบคือลายมือชื่อของผู้แจ้ง"
+            ? "แบบฟอร์มที่ระบบสร้างจากข้อมูลคำขอ ไฟล์ที่แนบเป็นเพียงรูปลายมือชื่อ ให้เปิดตัวหนังสือด้านล่างเพื่อดูว่าลงชื่อกำกับข้อความใด"
             : "แบบฟอร์มที่ระบบสร้างจากข้อมูลคำขอ ผู้แจ้งยังไม่ได้ลงลายมือชื่อ"}
         </p>
+      )}
+
+      {/* ตัวเอกสารที่ต้องตัดสิน ไม่ใช่ไฟล์แนบ — กระดาษใบเดียวกับที่ผู้ยื่นเซ็น */}
+      {doc.is_system_form && (
+        <Link
+          href={`/officer/applications/${applicationNo}/forms/${doc.code}`}
+          className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg border-2 border-brand-500 px-3 py-2 text-sm font-semibold text-brand-600 hover:bg-brand-50"
+        >
+          <FileText className="size-4" aria-hidden />
+          {doc.files.length > 0 ? "เปิดหนังสือที่ลงลายมือชื่อแล้ว" : "เปิดหนังสือ (ยังไม่มีลายมือชื่อ)"}
+        </Link>
       )}
 
       {doc.files.length > 0 && (
@@ -345,10 +357,21 @@ function DecisionPanel({
 
         {/* M10 — ออกเอกสารเป็นขั้นแยกจากการอนุมัติ */}
         {app.license_no && (
-          <p className="mt-3 rounded-xl bg-success-bg/60 px-3 py-2 text-sm text-ink">
-            ออกเอกสารแล้ว เลขที่{" "}
-            <span className="font-mono font-semibold">{app.license_no}</span>
-          </p>
+          <div className="mt-3 rounded-xl bg-success-bg/60 px-3 py-2 text-sm text-ink">
+            <p>
+              ออกเอกสารแล้ว เลขที่{" "}
+              <span className="font-mono font-semibold">{app.license_no}</span>
+            </p>
+            {/* คนลงนามต้องเปิดดูใบที่ออกไปได้ ไม่ใช่เห็นแค่เลขที่
+                หน้าเอกสารมีปุ่มพิมพ์ / บันทึกเป็น PDF อยู่ในตัว (M10) */}
+            <Link
+              href={`/officer/applications/${app.application_no}/license`}
+              className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg border-2 border-brand-500 bg-surface px-3 py-2 font-semibold text-brand-600 hover:bg-brand-50"
+            >
+              <FileCheck className="size-4" aria-hidden />
+              เปิดเอกสารที่ออกให้ · พิมพ์ / บันทึกเป็น PDF
+            </Link>
+          </div>
         )}
 
         {error && (
@@ -359,6 +382,11 @@ function DecisionPanel({
             {error}
           </p>
         )}
+
+        {/* เจ้าหน้าที่ควรรู้ว่าการกดปุ่มนี้มีผลออกไปถึงผู้ยื่นทันที */}
+        <p className="mt-3 text-xs text-ink-muted">
+          ทุกครั้งที่บันทึกผลพิจารณาหรือออกเอกสาร ระบบจะส่งอีเมลแจ้งผู้ยื่นตามที่อยู่ที่ใช้สมัครสมาชิกโดยอัตโนมัติ
+        </p>
 
         {app.can_issue_license && (
           <div className="mt-4 rounded-xl border border-line bg-canvas p-4">

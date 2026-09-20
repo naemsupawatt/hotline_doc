@@ -13,6 +13,10 @@ import {
   licenseSignatureUrl,
   thaiDate,
 } from "@/lib/applications";
+import {
+  getLicense as getOfficerLicense,
+  licenseSignatureUrl as officerSignatureUrl,
+} from "@/lib/officer";
 
 /**
  * M10 — เอกสารอนุญาตอิเล็กทรอนิกส์ที่ "พิมพ์ออกมาได้"
@@ -22,20 +26,31 @@ import {
  * ซึ่งเป็นจุดที่พังบ่อยตอนสร้าง PDF ฝั่งเซิร์ฟเวอร์
  *
  * คลาส print:* คือสิ่งที่หายไปตอนพิมพ์ เช่น ปุ่มและลิงก์กลับ
+ *
+ * ใช้ร่วมกันสองบทบาท เอกสารเป็นใบเดียวกัน ต่างกันแค่ API ที่เรียกและลิงก์กลับ
+ * เจ้าหน้าที่ต้องเปิดดูใบที่ตัวเองลงนามออกไปได้ ไม่ใช่เห็นแค่เลขที่บนหน้าคำขอ
  */
-export function LicenseView({ applicationNo }: { applicationNo: string }) {
+export function LicenseView({
+  applicationNo,
+  viewer = "operator",
+}: {
+  applicationNo: string;
+  /** operator = เจ้าของคำขอ · officer = เจ้าหน้าที่ผู้ลงนาม (เรียก API คนละเส้น) */
+  viewer?: "operator" | "officer";
+}) {
+  const asOfficer = viewer === "officer";
   const [doc, setDoc] = useState<LicenseDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    getLicense(applicationNo)
+    (asOfficer ? getOfficerLicense : getLicense)(applicationNo)
       .then(setDoc)
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "เปิดเอกสารไม่ได้ กรุณาลองใหม่"),
       );
-  }, [applicationNo]);
+  }, [applicationNo, asOfficer]);
 
   // ลายมือชื่อผู้ลงนามต้องโหลดพร้อม token จึงเป็น object URL ที่ต้องคืนหน่วยความจำเอง
   useEffect(() => {
@@ -43,7 +58,7 @@ export function LicenseView({ applicationNo }: { applicationNo: string }) {
     let cancelled = false;
 
     if (doc?.has_issuer_signature) {
-      licenseSignatureUrl(applicationNo)
+      (asOfficer ? officerSignatureUrl : licenseSignatureUrl)(applicationNo)
         .then((created) => {
           url = created;
           if (cancelled) URL.revokeObjectURL(created);
@@ -58,7 +73,7 @@ export function LicenseView({ applicationNo }: { applicationNo: string }) {
       setSignatureUrl(null);
       if (url) URL.revokeObjectURL(url);
     };
-  }, [applicationNo, doc?.has_issuer_signature]);
+  }, [applicationNo, doc?.has_issuer_signature, asOfficer]);
 
   if (error) {
     return (
@@ -69,7 +84,7 @@ export function LicenseView({ applicationNo }: { applicationNo: string }) {
           {error}
         </p>
         <Link
-          href={`/operator/applications/${applicationNo}`}
+          href={`/${viewer}/applications/${applicationNo}`}
           className="mt-6 inline-flex items-center gap-2 font-semibold text-brand-600 underline underline-offset-4"
         >
           <ArrowLeft className="size-4" aria-hidden />
@@ -91,7 +106,7 @@ export function LicenseView({ applicationNo }: { applicationNo: string }) {
     <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-12 print:max-w-none print:p-0">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <Link
-          href={`/operator/applications/${applicationNo}`}
+          href={`/${viewer}/applications/${applicationNo}`}
           className="inline-flex items-center gap-2 text-sm font-semibold text-brand-600 underline underline-offset-4"
         >
           <ArrowLeft className="size-4" aria-hidden />
