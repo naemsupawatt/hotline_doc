@@ -116,6 +116,11 @@ nvm use            # จำเป็น! default ของเครื่อง�
   และ A06 ร.ร.1 (ประเภท 1/2) — endpoint เดียว `GET /applications/{no}/forms/{code}`
   service เดียว `system_form.py` โครงกระดาษเดียว `SystemFormPaper.tsx`
   ต่างกันแค่เนื้อความใน `FormView.tsx`
+- **แผนที่จุดติดต่อเก็บในฐานข้อมูล** `local_authority.map_url` / `contact_point.map_url`
+  (migration `c4a91d5e77b2`) ค่าตั้งต้น 19 แห่งอยู่ที่ `seeds/local_authorities.py`
+  **ห้ามเขียนลิงก์ลงในคอมโพเนนต์** การแปลงลิงก์เป็น URL สำหรับฝังอยู่ที่ `lib/maps.ts`
+  ที่เดียว ฝังแผนที่โดยไม่ใช้ API key จึงต้องมีลิงก์เปิด Google Maps คู่กันเสมอ
+  (decisions ข้อ 17)
 - **เจ้าหน้าที่เปิดดูเอกสารที่ออกให้ได้แล้ว** `/officer/applications/[no]/license`
   ปุ่มอยู่ในกล่อง "ออกเอกสารแล้ว" จึงขึ้นเฉพาะหลังลงนามออกเอกสาร ไม่ใช่แค่อนุมัติ
   ใช้ `LicenseView` และ `presenters.to_license_out_for` ร่วมกับฝั่งผู้ยื่น (decisions ข้อ 16)

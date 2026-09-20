@@ -178,3 +178,37 @@ def test_classify_does_not_write_anything_to_the_database(client):
 def test_rejects_impossible_answers(client, rooms, guests):
     res = client.post(CLASSIFY, json={"rooms": rooms, "guests": guests})
     assert res.status_code == 422
+
+
+def test_contact_point_carries_a_map_link(client):
+    """M4: บอกชื่อสำนักงานอย่างเดียวไม่พอสำหรับคนที่ไม่เคยไป ต้องมีแผนที่ให้กด
+
+    ลิงก์ต้องมาจากฐานข้อมูล ไม่ใช่ประกอบในโค้ดจากชื่อหน่วยงาน (โจทย์ข้อ 4)
+    """
+    authority = client.get("/api/v1/wizard/local-authorities").json()[0]
+
+    res = client.post(
+        "/api/v1/wizard/classify",
+        json={"rooms": 6, "guests": 24, "local_authority_id": authority["id"]},
+    )
+
+    external = res.json()["documents"]["external"]
+    assert external, "ประเภทนี้ต้องมีเอกสารที่ต้องไปขอจากหน่วยงานอื่น"
+    contact = external[0]["contact_point"]
+    assert contact["map_url"], "จุดติดต่อต้องมีลิงก์แผนที่"
+    assert "place_id:" in contact["map_url"], "ใช้ place_id หมุดจึงไม่เพี้ยนตามชื่อที่เปลี่ยน"
+
+
+def test_every_authority_has_a_map_link():
+    """ทั้ง 19 แห่งต้องมีหมุด ไม่ใช่มีเฉพาะที่ทีมเปิดดูตอนทดสอบ"""
+    from sqlalchemy import select
+
+    from app.core.db import SessionLocal
+    from app.models.authority import LocalAuthority
+
+    with SessionLocal() as db:
+        authorities = db.scalars(select(LocalAuthority)).all()
+
+    assert len(authorities) == 19
+    missing = [a.name for a in authorities if not a.map_url]
+    assert missing == [], f"อปท. ที่ยังไม่มีลิงก์แผนที่: {missing}"

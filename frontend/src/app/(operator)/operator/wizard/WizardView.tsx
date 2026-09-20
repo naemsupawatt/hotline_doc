@@ -19,6 +19,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { Illustration } from "@/components/brand/Illustration";
+import { ContactMap } from "@/components/common/ContactMap";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SectionCard } from "@/components/common/SectionCard";
 import { Stepper } from "@/components/common/Stepper";
@@ -563,6 +564,12 @@ function ContactBlock({ contact, note }: { contact: RequiredDocument["contact_po
           </div>
         )}
       </dl>
+
+      <ContactMap
+        className="mt-2"
+        mapUrl={contact.map_url}
+        officeName={contact.office_name}
+      />
     </div>
   );
 }

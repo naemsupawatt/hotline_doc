@@ -19,6 +19,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { Mascot } from "@/components/brand/Mascot";
+import { ContactMap } from "@/components/common/ContactMap";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SectionCard } from "@/components/common/SectionCard";
 import { StatusPill } from "@/components/common/StatusPill";
@@ -402,13 +403,21 @@ function DocumentRow({
           </p>
 
           {doc.contact_point && (
-            <p className="mt-1.5 flex items-start gap-1.5 text-sm text-ink-muted">
-              <MapPin className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              ไปติดต่อที่ {doc.contact_point.office_name}
-              {doc.contact_point.estimated_days
-                ? ` · ใช้เวลาประมาณ ${doc.contact_point.estimated_days} วัน`
-                : ""}
-            </p>
+            <>
+              <p className="mt-1.5 flex items-start gap-1.5 text-sm text-ink-muted">
+                <MapPin className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                ไปติดต่อที่ {doc.contact_point.office_name}
+                {doc.contact_point.estimated_days
+                  ? ` · ใช้เวลาประมาณ ${doc.contact_point.estimated_days} วัน`
+                  : ""}
+              </p>
+              {/* ชื่อสำนักงานอย่างเดียวไม่พอสำหรับคนที่ไม่เคยไป */}
+              <ContactMap
+                className="mt-1 ps-5"
+                mapUrl={doc.contact_point.map_url}
+                officeName={doc.contact_point.office_name}
+              />
+            </>
           )}
         </div>
       </div>

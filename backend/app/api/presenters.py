@@ -31,6 +31,8 @@ def to_contact_out(item: svc.RequiredDocument) -> ContactPointOut | None:
         address=cp.address,
         phone=cp.phone,
         office_hours=cp.office_hours,
+        # จุดติดต่อที่ยังไม่ได้ปักหมุดของตัวเอง ใช้หมุดของ อปท. นั้นแทน
+        map_url=cp.map_url or (cp.local_authority.map_url if cp.local_authority else None),
         estimated_days=cp.estimated_days,
         notes=cp.notes,
     )

@@ -63,6 +63,11 @@ class ContactPointOut(BaseModel):
     address: str | None = Field(default=None, examples=["ถนนกะรน ตำบลกะรน อำเภอเมืองภูเก็ต"])
     phone: str | None = Field(default=None, examples=["076-000-001"])
     office_hours: str | None = Field(default=None, examples=["จันทร์–ศุกร์ 08.30–16.30 น."])
+    map_url: str | None = Field(
+        default=None,
+        examples=["https://www.google.com/maps/place/?q=place_id:ChIJn1ylaRoyUDARDsI7B08fRHM"],
+        description="ลิงก์แผนที่ของสำนักงานที่ต้องไปติดต่อ ว่างได้ถ้ายังไม่ได้ปักหมุดไว้",
+    )
     estimated_days: int | None = Field(default=None, examples=[30])
     notes: str | None = Field(default=None, examples=["ควรโทรนัดหมายล่วงหน้า"])
 

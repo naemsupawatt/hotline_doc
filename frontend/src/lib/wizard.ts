@@ -23,6 +23,8 @@ export type ContactPoint = {
   address: string | null;
   phone: string | null;
   office_hours: string | null;
+  /** ลิงก์แผนที่ของสำนักงานนั้น — ว่างได้ถ้ายังไม่ได้ปักหมุดไว้ในฐานข้อมูล */
+  map_url: string | null;
   estimated_days: number | null;
   notes: string | null;
 };

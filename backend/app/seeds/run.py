@@ -196,6 +196,8 @@ def seed_contact_points(db: Session, agencies: dict[str, IssuingAgency]) -> int:
             "office_name": cfg["office_name_template"].format(authority_name=authority.name),
             "address": authority.address,
             "phone": authority.phone,
+            # กองช่างอยู่ในสำนักงานของ อปท. จึงใช้หมุดเดียวกันเป็นค่าตั้งต้น
+            "map_url": authority.map_url,
             "office_hours": cfg["office_hours"],
             "estimated_days": cfg["estimated_days"],
             "notes": cfg["notes"],

@@ -27,6 +27,8 @@ class LocalAuthority(Base, TimestampMixin):
     phone: Mapped[str | None] = mapped_column(String(40))
     email: Mapped[str | None] = mapped_column(String(120))
     office_hours: Mapped[str | None] = mapped_column(String(120))
+    # ลิงก์แผนที่ของสำนักงาน — ผู้ประกอบการกดแล้วนำทางไปได้เลย (M4)
+    map_url: Mapped[str | None] = mapped_column(String(500))
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
 
     contact_points: Mapped[list[ContactPoint]] = relationship(back_populates="local_authority")
@@ -68,6 +70,9 @@ class ContactPoint(Base, TimestampMixin):
     address: Mapped[str | None] = mapped_column(Text())
     phone: Mapped[str | None] = mapped_column(String(40))
     office_hours: Mapped[str | None] = mapped_column(String(120))
+    # จุดติดต่อไม่จำเป็นต้องอยู่ที่เดียวกับสำนักงานใหญ่ของ อปท. จึงมีลิงก์ของตัวเองได้
+    # ว่างไว้ = ใช้ลิงก์ของ อปท. นั้น (ดู presenters.to_contact_out)
+    map_url: Mapped[str | None] = mapped_column(String(500))
     estimated_days: Mapped[int | None] = mapped_column(Integer)  # M4: ใช้เวลาโดยประมาณเท่าใด
     notes: Mapped[str | None] = mapped_column(Text())
 
