@@ -4,7 +4,7 @@
  * ชนิดข้อมูลต้องตรงกับ backend/app/schemas/application.py
  * เส้นทางกลุ่มนี้ต้องแนบ token เสมอ ต่างจาก /wizard ที่เปิดให้ลองได้เลย
  */
-import { ApiError, BASE, api } from "@/lib/api";
+import { api, fileBlobUrl, uploadToStorage } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import type { ClassifyResult, RequiredDocument } from "@/lib/wizard";
 
@@ -143,12 +143,27 @@ export type UploadedFile = {
  * ไม่ส่ง slotNo = แนบไฟล์ใหม่ (เอกสารที่แนบได้ไฟล์เดียวจะกลายเป็นรุ่นใหม่ของไฟล์เดิม)
  * ส่ง slotNo = ตั้งใจแทนที่ไฟล์เดิมของ slot นั้น
  */
-export function uploadDocument(
+export async function uploadDocument(
   applicationNo: string,
   code: string,
   file: File,
   slotNo?: number,
 ) {
+  const path = `/applications/${encodeURIComponent(applicationNo)}/documents/${code}`;
+  const prepared = await api<
+    { mode: "local" } | { mode: "supabase"; upload_url: string; ticket: string }
+  >(`${path}/prepare`, {
+    method: "POST", ...authed(),
+    body: JSON.stringify({
+      original_name: file.name, content_type: file.type, size_bytes: file.size, slot_no: slotNo,
+    }),
+  });
+  if (prepared.mode === "supabase") {
+    await uploadToStorage(prepared.upload_url, file);
+    return api<UploadedFile>(`${path}/complete`, {
+      method: "POST", ...authed(), body: JSON.stringify({ ticket: prepared.ticket }),
+    });
+  }
   const form = new FormData();
   form.append("file", file);
   if (slotNo !== undefined) form.append("slot_no", String(slotNo));
@@ -177,10 +192,7 @@ export async function fetchDocumentFileUrl(
   applicationNo: string,
   fileId: number,
 ): Promise<string> {
-  const url = `${BASE}/applications/${encodeURIComponent(applicationNo)}/documents/file/${fileId}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
-  if (!res.ok) throw new ApiError("เปิดไฟล์แนบไม่ได้ กรุณาลองใหม่อีกครั้ง", res.status);
-  return URL.createObjectURL(await res.blob());
+  return fileBlobUrl(`/applications/${encodeURIComponent(applicationNo)}/documents/file/${fileId}`, getToken() ?? "");
 }
 
 /**
@@ -238,10 +250,7 @@ export function getLicense(applicationNo: string) {
  * ทุกครั้งที่เปิดหน้าใบอนุญาตจะต้องโหลดรูปไปด้วยเสมอแม้ยังไม่ได้ใช้
  */
 export async function licenseSignatureUrl(applicationNo: string): Promise<string> {
-  const url = `${BASE}/applications/${encodeURIComponent(applicationNo)}/license/signature`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
-  if (!res.ok) throw new ApiError("โหลดลายมือชื่อผู้ลงนามไม่ได้", res.status);
-  return URL.createObjectURL(await res.blob());
+  return fileBlobUrl(`/applications/${encodeURIComponent(applicationNo)}/license/signature`, getToken() ?? "");
 }
 
 /** วันที่แบบไทย พ.ศ. — เอกสารราชการใช้ พ.ศ. ไม่ใช่ ค.ศ. */

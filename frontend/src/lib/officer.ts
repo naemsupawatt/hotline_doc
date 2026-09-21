@@ -4,7 +4,7 @@
  * ชนิดข้อมูลต้องตรงกับ backend/app/schemas/officer.py
  * ทุกเส้นทางต้องแนบ token และถูกกรองด้วยเขตที่เจ้าหน้าที่สังกัดเสมอ (T-09)
  */
-import { ApiError, BASE, api } from "@/lib/api";
+import { api, fileBlobUrl } from "@/lib/api";
 import type { ApplicationProperty, LicenseDocument } from "@/lib/applications";
 import { getToken } from "@/lib/auth";
 import type { SystemForm } from "@/lib/systemForm";
@@ -126,12 +126,7 @@ export async function fetchDocumentFileUrl(
   applicationNo: string,
   fileId: number,
 ): Promise<string> {
-  const url = `${BASE}/officer/applications/${encodeURIComponent(applicationNo)}/documents/file/${fileId}`;
-
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
-  if (!res.ok) throw new ApiError("เปิดไฟล์แนบไม่ได้ กรุณาลองใหม่อีกครั้ง", res.status);
-
-  return URL.createObjectURL(await res.blob());
+  return fileBlobUrl(`/officer/applications/${encodeURIComponent(applicationNo)}/documents/file/${fileId}`, getToken() ?? "");
 }
 
 /**
@@ -149,12 +144,7 @@ export function getLicense(applicationNo: string) {
 
 /** รูปลายมือชื่อผู้ลงนาม — ฝาแฝดฝั่งเจ้าหน้าที่ของ licenseSignatureUrl ใน lib/applications.ts */
 export async function licenseSignatureUrl(applicationNo: string): Promise<string> {
-  const url = `${BASE}/officer/applications/${encodeURIComponent(applicationNo)}/license/signature`;
-
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
-  if (!res.ok) throw new ApiError("โหลดลายมือชื่อผู้ลงนามไม่ได้", res.status);
-
-  return URL.createObjectURL(await res.blob());
+  return fileBlobUrl(`/officer/applications/${encodeURIComponent(applicationNo)}/license/signature`, getToken() ?? "");
 }
 
 /**

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,6 +15,10 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 480
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     STORAGE_DIR: str = "./storage"
+    STORAGE_BACKEND: Literal["local", "supabase"] = "local"
+    SUPABASE_URL: str = ""
+    SUPABASE_SECRET_KEY: str = ""
+    SUPABASE_STORAGE_BUCKET: str = "hotline-documents"
     MAX_UPLOAD_MB: int = 10
 
     # ที่อยู่ของหน้าเว็บ ใช้ประกอบลิงก์ในอีเมลแจ้งเตือน

@@ -22,6 +22,7 @@ from app.models.application import Application
 from app.models.document import DocumentFile, DocumentRequirement, DocumentType
 from app.models.enums import DocumentStatus
 from app.models.user import User
+from app.services import storage
 
 # นามสกุลไฟล์ตาม MIME — ใช้ตั้งชื่อไฟล์ที่เก็บ ไม่ได้ใช้ตรวจความถูกต้อง
 EXTENSION = {
@@ -149,6 +150,7 @@ def save_upload(
     content_type: str,
     data: bytes,
     slot_no: int | None = None,
+    storage_key: str | None = None,
 ) -> UploadResult:
     """บันทึกไฟล์ลงดิสก์และสร้างแถวรุ่นใหม่
 
@@ -164,10 +166,10 @@ def save_upload(
 
     # ชื่อไฟล์บนดิสก์ไม่ใช้ชื่อที่ผู้ใช้ส่งมา เพื่อกัน path traversal และชื่อซ้ำ
     # ชื่อจริงเก็บไว้ในคอลัมน์ original_name สำหรับแสดงผล
-    folder = storage_root() / application.application_no / doc.code
-    folder.mkdir(parents=True, exist_ok=True)
-    stored = folder / f"{uuid4().hex}{EXTENSION.get(content_type, '')}"
-    stored.write_bytes(data)
+    key = storage_key or (
+        f"{application.application_no}/{doc.code}/{uuid4().hex}{EXTENSION.get(content_type, '')}"
+    )
+    stored = storage.write(key, data, content_type)
 
     # รุ่นเก่าของ slot เดียวกันเลิกเป็นรุ่นปัจจุบัน แต่ไม่ถูกลบ
     for old in db.scalars(
@@ -186,7 +188,7 @@ def save_upload(
         slot_no=slot_no,
         version_no=version_no,
         is_current=True,
-        stored_path=str(stored.relative_to(storage_root())),
+        stored_path=stored,
         original_name=original_name[:255],
         mime_type=content_type,
         size_bytes=len(data),

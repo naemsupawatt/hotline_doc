@@ -637,6 +637,50 @@ def test_issued_document_keeps_the_signature_for_the_printed_page(client, owner,
     assert img.headers["content-type"] == "image/png"
 
 
+def test_cloud_issuer_signature_is_private_for_both_viewers(
+    client, owner, officer_a, officer_b, monkeypatch,
+):
+    import httpx
+
+    from app.services import storage
+
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+    approve_fully(client, owner, officer_a, no)
+    saved = {}
+
+    def cloud_write(key, data, mime):
+        saved[key] = (data, mime)
+        return storage.CLOUD_PREFIX + key
+
+    monkeypatch.setattr(storage, "write", cloud_write)
+    assert issue(client, officer_a, no).status_code == 200
+    assert len(saved) == 1
+    assert next(iter(saved.values())) == (PNG, "image/png")
+    links = []
+
+    def signed_request(method, path, **kwargs):
+        links.append(path)
+        return httpx.Response(200, json={"signedURL": "https://example.supabase.co/private?token=t"})
+
+    monkeypatch.setattr(storage, "request", signed_request)
+    monkeypatch.setattr(storage, "_signed_url", lambda value: value)
+    for prefix, viewer in [("", owner), ("/officer", officer_a)]:
+        response = client.get(
+            f"/api/v1{prefix}/applications/{no}/license/signature?download_url=true",
+            headers=auth(viewer),
+        )
+        assert response.status_code == 200
+        assert "download_url" in response.json()
+        assert "no-store" in response.headers["cache-control"]
+    denied = client.get(
+        f"/api/v1/officer/applications/{no}/license/signature?download_url=true",
+        headers=auth(officer_b),
+    )
+    assert denied.status_code == 403
+    assert len(links) == 2, "Denied viewers must never receive a signed URL"
+
+
 def test_m10_notice_receipt_for_properties_that_need_no_licence(client, owner, officer_a):
     """ที่พักที่ไม่เข้าข่ายโรงแรมก็ต้องได้เอกสารที่พิมพ์ได้พร้อมเลขอ้างอิง
 

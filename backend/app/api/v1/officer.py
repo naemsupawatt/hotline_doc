@@ -23,7 +23,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import select
 
 from app.api import presenters
@@ -50,6 +50,7 @@ from app.services import document as doc_svc
 from app.services import license as license_svc
 from app.services import notification as notify_svc
 from app.services import officer as officer_svc
+from app.services import storage
 from app.services import system_form as form_svc
 
 router = APIRouter()
@@ -260,7 +261,8 @@ def open_document(
     db: DbSession,
     current: CurrentOfficer,
     request: Request,
-) -> FileResponse:
+    download_url: bool = False,
+) -> Response:
     """เจ้าหน้าที่ต้องเปิดไฟล์ได้ ไม่งั้นตรวจเอกสารไม่ได้จริง
 
     ใช้ guard ตัวเดียวกับหน้าอื่น ไฟล์ของคำขอนอกเขตจึงเปิดไม่ได้เช่นกัน
@@ -271,14 +273,9 @@ def open_document(
     if row is None or row.application_id != application.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบไฟล์ที่ต้องการ")
 
-    path = doc_svc.storage_root() / row.stored_path
-    if not path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="ไฟล์นี้หาไม่พบในระบบจัดเก็บ กรุณาขอให้ผู้ยื่นอัปโหลดใหม่",
-        )
-
-    return FileResponse(path, media_type=row.mime_type, filename=row.original_name)
+    return storage.file_response(
+        row.stored_path, row.mime_type, row.original_name, download_url=download_url
+    )
 
 
 @router.get(
@@ -358,20 +355,23 @@ def application_license(
     },
 )
 def license_signature(
-    application_no: str, db: DbSession, current: CurrentOfficer, request: Request
-) -> FileResponse:
+    application_no: str, db: DbSession, current: CurrentOfficer, request: Request,
+    download_url: bool = False,
+) -> Response:
     """แยกจาก LicenseOut ด้วยเหตุผลเดียวกับฝั่งผู้ยื่น — ไม่ต้องแบกรูปมากับ JSON ทุกครั้ง"""
     application = _load_in_scope(db, application_no, current, request)
 
     row = license_svc.existing(db, application.id)
-    path = license_svc.signature_path(row) if row else None
-    if path is None or not path.exists():
+    if row is None or not row.issuer_signature_path:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="เอกสารใบนี้ไม่มีลายมือชื่อผู้ลงนามเก็บไว้ในระบบ",
         )
 
-    return FileResponse(path, media_type="image/png", filename=f"{row.license_no}.png")
+    return storage.file_response(
+        row.issuer_signature_path, "image/png", f"{row.license_no}.png",
+        download_url=download_url,
+    )
 
 
 # ---------------------------------------------------------------- ตัวช่วยภายใน

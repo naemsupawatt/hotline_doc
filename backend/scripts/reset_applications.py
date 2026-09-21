@@ -27,6 +27,7 @@ from app.models.document import DocumentFile, DocumentReview
 from app.models.license import License
 from app.models.property import Property
 from app.services import document as doc_svc
+from app.services import storage
 
 # entity_type ของ audit ที่เกิดจากคำขอ — แถวเรื่องบัญชีผู้ใช้ (app_user) เก็บไว้
 APPLICATION_AUDIT_ENTITIES = ("application", "document_file", "license")
@@ -67,6 +68,15 @@ def main() -> int:
 
         # เก็บชื่อโฟลเดอร์ไฟล์ไว้ก่อน เพราะหลังลบแถวแล้วจะหาไม่ได้อีก
         application_numbers = list(db.scalars(select(Application.application_no)).all())
+        cloud_files = [
+            ref for ref in [
+                *db.scalars(select(DocumentFile.stored_path)),
+                *db.scalars(select(License.issuer_signature_path)),
+            ] if ref and ref.startswith(storage.CLOUD_PREFIX)
+        ]
+        # Delete via Storage API while references still exist, so a failed delete can be retried.
+        for ref in cloud_files:
+            storage.delete(ref)
 
         db.execute(delete(DocumentReview))
         db.execute(delete(DocumentFile))

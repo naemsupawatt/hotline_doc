@@ -10,7 +10,7 @@
 """
 
 from fastapi import APIRouter, HTTPException, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import select
 
 from app.api import presenters
@@ -40,6 +40,7 @@ from app.services import application as app_svc
 from app.services import classification as classify_svc
 from app.services import document as doc_svc
 from app.services import license as license_svc
+from app.services import storage
 from app.services import system_form as form_svc
 
 router = APIRouter()
@@ -201,8 +202,9 @@ def application_license(
     responses={404: {"description": "ยังไม่ได้ออกเอกสาร หรือเอกสารใบนี้ไม่มีลายมือชื่อเก็บไว้"}},
 )
 def license_signature(
-    application_no: str, db: DbSession, current: CurrentOperator, request: Request
-) -> FileResponse:
+    application_no: str, db: DbSession, current: CurrentOperator, request: Request,
+    download_url: bool = False,
+) -> Response:
     """แยกเป็น endpoint ต่างหากแทนการฝัง base64 มากับ LicenseOut
 
     ถ้าฝังมาด้วย ทุกครั้งที่เปิดหน้าใบอนุญาตจะต้องโหลดรูปไปด้วยเสมอแม้ยังไม่ได้ใช้
@@ -211,14 +213,16 @@ def license_signature(
     application = _load_owned(db, application_no, current, request)
 
     row = license_svc.existing(db, application.id)
-    path = license_svc.signature_path(row) if row else None
-    if path is None or not path.exists():
+    if row is None or not row.issuer_signature_path:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="เอกสารใบนี้ไม่มีลายมือชื่อผู้ลงนามเก็บไว้ในระบบ",
         )
 
-    return FileResponse(path, media_type="image/png", filename=f"{row.license_no}.png")
+    return storage.file_response(
+        row.issuer_signature_path, "image/png", f"{row.license_no}.png",
+        download_url=download_url,
+    )
 
 
 @router.get(

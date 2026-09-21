@@ -233,6 +233,7 @@ def submit(
     T-06 บังคับว่าเมื่อเอกสารบังคับไม่ครบ ต้องไม่ให้ยื่น **และระบุชัดว่าขาดฉบับใด**
     จึงคืนรายการที่ขาดออกไปด้วย ไม่ใช่แค่บอกว่า "เอกสารไม่ครบ"
     """
+    db.refresh(application, with_for_update=True)
     if application.status != ApplicationStatus.DRAFT:
         if application.status == ApplicationStatus.NEEDS_REVISION:
             pass  # ส่งกลับหลังแก้ไขได้

@@ -87,3 +87,40 @@ export async function api<T>(path: string, init?: RequestInit & { token?: string
 
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
+
+/** Upload with a scoped Storage URL; never send the app JWT to the storage service. */
+export async function uploadToStorage(url: string, file: File): Promise<void> {
+  const body = new FormData();
+  body.append("file", file);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "PUT", body, credentials: "omit", referrerPolicy: "no-referrer",
+    });
+  } catch {
+    throw new ApiError("อัปโหลดไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", 0);
+  }
+  if (!response.ok) {
+    throw new ApiError("อัปโหลดไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", response.status);
+  }
+}
+
+/** API checks ownership/scope before returning bytes or a short-lived private URL. */
+export async function fileBlobUrl(path: string, token: string): Promise<string> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE}${path}?download_url=true`, {
+      headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+    });
+    if (response.ok && response.headers.get("content-type")?.includes("application/json")) {
+      const body = await response.json() as { download_url: string };
+      response = await fetch(body.download_url, {
+        credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store",
+      });
+    }
+  } catch {
+    throw new ApiError("เปิดไฟล์ไม่ได้ กรุณาลองใหม่อีกครั้ง", 0);
+  }
+  if (!response.ok) throw new ApiError("เปิดไฟล์ไม่ได้ กรุณาลองใหม่อีกครั้ง", response.status);
+  return URL.createObjectURL(await response.blob());
+}

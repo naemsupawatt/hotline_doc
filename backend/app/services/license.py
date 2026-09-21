@@ -12,7 +12,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from pathlib import Path
+from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -24,7 +24,7 @@ from app.models.enums import ApplicationStatus, LicenseKind
 from app.models.license import License
 from app.models.user import User
 from app.services import classification as classify_svc
-from app.services import document as doc_svc
+from app.services import storage
 
 BUDDHIST_OFFSET = 543
 LICENSE_PREFIX = "HL"  # ใบอนุญาต
@@ -49,17 +49,6 @@ def _reference_no(kind: LicenseKind, row_id: int) -> str:
     prefix = LICENSE_PREFIX if kind is LicenseKind.LICENSE else RECEIPT_PREFIX
     year = datetime.now(UTC).year + BUDDHIST_OFFSET
     return f"{prefix}-{year}-{row_id:06d}"
-
-
-def signature_dir() -> Path:
-    """เก็บแยกจากโฟลเดอร์ของคำขอ เพราะเป็นไฟล์ของเอกสารที่ระบบออก ไม่ใช่ไฟล์ที่ผู้ยื่นส่งมา"""
-    return doc_svc.storage_root() / "licenses"
-
-
-def signature_path(row: License) -> Path | None:
-    if not row.issuer_signature_path:
-        return None
-    return doc_svc.storage_root() / row.issuer_signature_path
 
 
 def issue(
@@ -116,12 +105,11 @@ def issue(
     db.flush()
     row.license_no = _reference_no(kind, row.id)
 
-    # ตั้งชื่อไฟล์ด้วยเลขเอกสารซึ่งไม่ซ้ำอยู่แล้ว จึงไม่ต้องสุ่มชื่อเหมือนไฟล์ที่ผู้ใช้อัปโหลด
-    # (ชื่อไฟล์ที่ผู้ใช้ตั้งเองเป็นช่องทาง path traversal ส่วนเลขนี้ระบบเป็นคนออก)
-    folder = signature_dir()
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / f"{row.license_no}.png").write_bytes(signature_png)
-    row.issuer_signature_path = f"licenses/{row.license_no}.png"
+    # UUID ป้องกันการเขียนทับ แม้ธุรกรรมก่อนหน้าล้มเหลวหลังเขียนไฟล์ไปแล้ว
+    # ทั้งเลขเอกสารและชื่อไฟล์ออกโดยระบบ ไม่ใช้ path ที่ผู้ใช้ส่งมา
+    row.issuer_signature_path = storage.write(
+        f"licenses/{row.license_no}-{uuid4().hex}.png", signature_png, "image/png"
+    )
 
     previous = application.status
     application.status = ApplicationStatus.LICENSE_ISSUED
