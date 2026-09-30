@@ -13,7 +13,7 @@ import {
   Upload,
   Users,
 } from "lucide-react";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -33,6 +33,16 @@ import {
   startApplication,
 } from "@/lib/applications";
 import { getUser } from "@/lib/auth";
+import {
+  type Answers,
+  EMPTY_ANSWERS,
+  clearAssessment,
+  parseAssessment,
+  readStoredAssessment,
+  saveAssessment,
+  toWizardAnswers,
+  validateAnswers,
+} from "@/lib/draftAssessment";
 import { groupByParent } from "@/lib/documents";
 import {
   type ClassifyResult,
@@ -45,16 +55,11 @@ import {
 
 const STEPS = [{ label: "ข้อมูลที่พักและบริการ" }, { label: "ผลประเมินและเอกสาร" }];
 
-/** คำตอบทั้งหมดของ wizard เก็บไว้ที่ตัวหน้า เพราะขั้น "เริ่มยื่นคำขอ" ต้องใช้ค่าชุดเดียวกัน
-    ส่งซ้ำไปให้เซิร์ฟเวอร์จำแนกใหม่ ไม่ได้ส่งผลจำแนกที่ได้มาแล้วกลับไป */
-export type Answers = {
-  rooms: string;
-  guests: string;
-  hasRestaurant: boolean;
-  authorityId: string;
-};
+/* คำตอบทั้งหมดของ wizard เก็บไว้ที่ตัวหน้า เพราะขั้น "เริ่มยื่นคำขอ" ต้องใช้ค่าชุดเดียวกัน
+   ส่งซ้ำไปให้เซิร์ฟเวอร์จำแนกใหม่ ไม่ได้ส่งผลจำแนกที่ได้มาแล้วกลับไป
 
-const EMPTY: Answers = { rooms: "", guests: "", hasRestaurant: false, authorityId: "" };
+   ตัว type และการเก็บลงเบราว์เซอร์ย้ายไปอยู่ `lib/draftAssessment.ts` แล้ว
+   เพราะหน้าสมัครสมาชิกกับหน้านี้ต้องเข้าใจรูปร่างเดียวกัน */
 
 const EMPTY_ADDRESS: AddressInput = {
   address_no: "",
@@ -68,9 +73,17 @@ const EMPTY_ADDRESS: AddressInput = {
 
 export function WizardView() {
   const [result, setResult] = useState<ClassifyResult | null>(null);
-  const [answers, setAnswers] = useState<Answers>(EMPTY);
+  const [edited, setEdited] = useState<Answers | null>(null);
   const [authorities, setAuthorities] = useState<LocalAuthority[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // คำตอบที่เคยกรอกไว้ตอนยังไม่ได้สมัครสมาชิก (ดู lib/draftAssessment.ts)
+  const stored = useStoredAssessment();
+
+  // ตราบใดที่ผู้ใช้ยังไม่แตะฟอร์มในรอบนี้ ให้ใช้คำตอบเก่าที่เรียกคืนมา
+  // คำนวณเอาตอน render แทนการ setState ใน effect ซึ่งทำให้ render ซ้อนกันโดยเปล่าประโยชน์
+  const answers = edited ?? stored ?? EMPTY_ANSWERS;
+  const restored = edited === null && stored !== null;
 
   // อปท. 19 แห่งมาจากฐานข้อมูล ไม่ได้เขียนตายตัวไว้ในหน้าเว็บ (ข้อ 4 ของโจทย์)
   // ดึงที่ตัวหน้าเพราะใช้สองที่: ช่องเลือกพื้นที่ และรายการอำเภอในฟอร์มที่อยู่
@@ -79,6 +92,25 @@ export function WizardView() {
       .then(setAuthorities)
       .catch(() => setLoadError("โหลดรายชื่อหน่วยงานท้องถิ่นไม่ได้ กรุณารีเฟรชหน้าอีกครั้ง"));
   }, []);
+
+  // ประเมินใหม่จากคำตอบที่เรียกคืนมา ไม่ได้เก็บผลเก่าไว้แสดงซ้ำ เพราะ Super Admin
+  // แก้เกณฑ์ได้ตลอดเวลา (US-09) ผลที่ประเมินไว้เมื่อวานอาจขัดกับกฎของวันนี้
+  useEffect(() => {
+    if (!restored || stored === null || validateAnswers(stored) !== null) return;
+
+    let active = true;
+    // ประเมินอัตโนมัติไม่สำเร็จก็ไม่ต้องขึ้น error ตรงนี้ ฟอร์มถูกเติมให้แล้ว
+    // ผู้ใช้กดปุ่มประเมินเองได้ แล้วจะได้ข้อความที่อธิบายสาเหตุจริงจากในฟอร์ม
+    classify(toWizardAnswers(stored))
+      .then((fresh) => {
+        if (active) setResult(fresh);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      active = false;
+    };
+  }, [restored, stored]);
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
@@ -94,12 +126,18 @@ export function WizardView() {
         <Stepper steps={STEPS} current={result ? 1 : 0} className="mx-auto max-w-2xl" />
       </div>
 
+      {restored && <RestoredNotice />}
+
       {/* ให้ฟอร์มกว้างกว่าแผงขวา เพราะฝั่งซ้ายมีช่องกรอกจริง ส่วนขวาเป็นคำอธิบาย
           และเปลี่ยนจุดตัดจาก xl เป็น lg เพราะที่ 1024px ก็วางสองคอลัมน์ได้สบายแล้ว */}
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <AssessmentForm
           answers={answers}
-          onAnswersChange={(next) => { setAnswers(next); setResult(null); }}
+          onAnswersChange={(next) => {
+            setEdited(next);
+            setResult(null);
+            saveAssessment(next);
+          }}
           onResult={setResult}
           onReset={() => setResult(null)}
           authorities={authorities}
@@ -116,6 +154,40 @@ export function WizardView() {
       )}
     </main>
   );
+}
+
+/**
+ * แจ้งว่าฟอร์มถูกเติมจากคำตอบที่เคยกรอกไว้ ไม่ใช่ค่าที่ระบบเดาให้
+ *
+ * หายไปทันทีที่ผู้ใช้แก้ค่าช่องใดช่องหนึ่ง เพราะตั้งแต่จุดนั้นคำตอบบนจอ
+ * เป็นของรอบนี้แล้ว ไม่ใช่ของเก่าที่เรียกคืนมา
+ */
+function RestoredNotice() {
+  return (
+    <p className="mt-6 flex items-start gap-2.5 rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-700">
+      <RotateCcw className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <span>
+        นำข้อมูลที่คุณเคยกรอกไว้กลับมาให้แล้ว ตรวจดูอีกครั้งแล้วแก้ไขได้ตามต้องการ
+      </span>
+    </p>
+  );
+}
+
+/**
+ * คำตอบที่เคยกรอกไว้ก่อนสมัครสมาชิก — อ่านจาก localStorage ซึ่งเป็น external store
+ * ของฝั่งเบราว์เซอร์ เหตุผลที่ใช้ useSyncExternalStore เหมือน useSignedIn ด้านล่าง
+ *
+ * snapshot ที่อ่านเป็น "สตริงดิบ" ไม่ใช่อ็อบเจกต์ เพราะ React เทียบ snapshot ด้วย
+ * Object.is ทุกครั้งที่ตรวจ ถ้าคืนอ็อบเจกต์ที่ parse ใหม่ทุกรอบจะไม่มีวันเท่าเดิม
+ * แล้ว render วนไม่จบ การแปลงค่าจึงทำใน useMemo ที่ผูกกับสตริงนั้นแทน
+ */
+function useStoredAssessment(): Answers | null {
+  const raw = useSyncExternalStore(
+    subscribeToBrowserStorage,
+    readStoredAssessment,
+    () => null,
+  );
+  return useMemo(() => parseAssessment(raw), [raw]);
 }
 
 /* ------------------------------------------------------------------ ฟอร์ม */
@@ -151,29 +223,17 @@ function AssessmentForm({
     setError(null);
     onReset();
 
-    const rooms = Number(answers.rooms);
-    const guests = Number(answers.guests);
-
     // ตรวจฝั่งนี้ก่อนยิง API เพื่อให้ผู้ใช้รู้ผลทันที ไม่ใช่เพื่อแทนการตรวจฝั่งเซิร์ฟเวอร์
-    if (!Number.isInteger(rooms) || rooms < 1) {
-      setError("กรุณากรอกจำนวนห้องพักเป็นตัวเลขตั้งแต่ 1 ห้องขึ้นไป");
-      return;
-    }
-    if (!Number.isInteger(guests) || guests < 1) {
-      setError("กรุณากรอกจำนวนผู้เข้าพักเป็นตัวเลขตั้งแต่ 1 คนขึ้นไป");
+    // กฎอยู่ที่ lib/draftAssessment.ts ที่เดียว เพราะการเรียกคืนคำตอบเก่าก็ใช้ชุดนี้
+    const problem = validateAnswers(answers);
+    if (problem !== null) {
+      setError(problem);
       return;
     }
 
     setPending(true);
     try {
-      onResult(
-        await classify({
-          rooms,
-          guests,
-          has_restaurant: hasRestaurant,
-          local_authority_id: authorityId ? Number(authorityId) : null,
-        }),
-      );
+      onResult(await classify(toWizardAnswers(answers)));
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -584,14 +644,14 @@ function ContactBlock({ contact, note }: { contact: RequiredDocument["contact_po
  *   - ฝั่งเซิร์ฟเวอร์ไม่มี storage จึงต้องมี snapshot แยก (คืน false) กัน hydration พัง
  *   - ถ้าผู้ใช้ล็อกอิน/ออกจากระบบในแท็บอื่น หน้านี้อัปเดตตามทันที
  */
-function subscribeToAuth(onChange: () => void) {
+function subscribeToBrowserStorage(onChange: () => void) {
   window.addEventListener("storage", onChange);
   return () => window.removeEventListener("storage", onChange);
 }
 
 function useSignedIn(): boolean {
   return useSyncExternalStore(
-    subscribeToAuth,
+    subscribeToBrowserStorage,
     () => getUser() !== null,
     () => false,
   );
@@ -674,6 +734,13 @@ function StartApplicationSection({
         <p className="mt-3 text-sm text-ink-muted">
           ผลประเมินด้านบนดูได้โดยไม่ต้องเข้าสู่ระบบ ส่วนการยื่นคำขอต้องระบุตัวตนผู้ยื่น
         </p>
+        <p className="mt-2 flex items-start gap-2.5 rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-700">
+          <RotateCcw className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>
+            ข้อมูลที่กรอกไว้ถูกเก็บในเครื่องนี้แล้ว สมัครเสร็จระบบจะพากลับมาที่หน้านี้
+            พร้อมคำตอบเดิม ไม่ต้องกรอกใหม่
+          </span>
+        </p>
       </SectionCard>
     );
   }
@@ -716,6 +783,9 @@ function StartApplicationSection({
         accommodation_kind: kind,
         accommodation_kind_other: kind === "other" ? kindOther.trim() : null,
       });
+      // ข้อมูลย้ายไปอยู่ในคำขอจริงแล้ว ถ้าไม่ล้าง ครั้งหน้าที่เปิดหน้าประเมิน
+      // จะเจอตัวเลขของที่พักหลังก่อนค้างอยู่ในฟอร์ม
+      clearAssessment();
       router.push(`/operator/applications/${created.application_no}`);
     } catch (err) {
       setError(

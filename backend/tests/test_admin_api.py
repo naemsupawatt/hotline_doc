@@ -40,7 +40,7 @@ def login(client: TestClient, email: str) -> dict:
 
 @pytest.fixture
 def admin(client) -> dict:
-    return login(client, "admin@example.com")
+    return login(client, "hotlinedoc.info@gmail.com")
 
 
 @pytest.fixture(autouse=True)
@@ -103,7 +103,7 @@ def test_rule_edit_is_recorded_in_the_audit_trail(client, admin):
     client.patch(f"{RULES}/RULE-NOT-HOTEL", headers=admin, json={"max_guests": 35})
 
     with SessionLocal() as db:
-        admin_id = db.scalar(select(User.id).where(User.email == "admin@example.com"))
+        admin_id = db.scalar(select(User.id).where(User.email == "hotlinedoc.info@gmail.com"))
         logged = db.scalar(
             select(AuditLog)
             .where(AuditLog.actor_id == admin_id, AuditLog.action == "admin.rule_update")

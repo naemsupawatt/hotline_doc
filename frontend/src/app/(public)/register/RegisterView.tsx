@@ -223,6 +223,18 @@ function RegisterForm({ onRegistered }: { onRegistered: (user: AuthUser) => void
           เข้าสู่ระบบ
         </Link>
       </p>
+
+      {/* คนที่มาถึงหน้านี้แล้วยังลังเล ควรมีทางถอยที่ไม่ใช่การปิดแท็บ
+          ใช้ลิงก์บรรทัดเดียวพอ หน้านี้ยาวอยู่แล้วไม่ควรมีปุ่มใหญ่เพิ่มอีก */}
+      <p className="mt-3 text-center text-sm text-ink-muted">
+        อยากรู้ก่อนว่าที่พักของคุณต้องทำอะไรบ้าง?{" "}
+        <Link
+          href="/operator/wizard"
+          className="font-semibold text-brand-600 underline underline-offset-4 hover:text-brand-400"
+        >
+          ลองประเมินที่พักก่อน
+        </Link>
+      </p>
     </>
   );
 }

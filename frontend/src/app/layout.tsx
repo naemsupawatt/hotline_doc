@@ -28,7 +28,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="th" className={thai.variable}>
-      <body className="antialiased">{children}</body>
+      {/* ส่วนขยายเบราว์เซอร์ (เช่น ColorZilla) เติม attribute ใส่ <body> ก่อน React hydrate
+          ทำให้ขึ้นคำเตือน hydration mismatch ทั้งที่โค้ดไม่ได้ผิด — ยกเว้นการเทียบ
+          เฉพาะ attribute ของ <body> เอง ไม่รวมลูกข้างใน */}
+      <body className="antialiased" suppressHydrationWarning>{children}</body>
     </html>
   );
 }

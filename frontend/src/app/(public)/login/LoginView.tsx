@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Lock, Mail, Phone } from "lucide-react";
+import { ArrowRight, Building2, Lock, Mail, Phone } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -145,10 +145,40 @@ export function LoginView() {
             สมัครสมาชิก
           </Link>
 
+          <TryWithoutAccount />
+
           <DemoAccounts onSelect={(email) => { setIdentifier(email); setPassword("demo1234"); setError(null); }} />
         </>
       )}
     </AuthLayout>
+  );
+}
+
+/**
+ * ทางเข้าสำหรับคนที่ยังไม่อยากสมัคร (US-01)
+ *
+ * หน้าแรกของระบบ redirect มาที่หน้านี้ ถ้าไม่มีทางออกตรงนี้ คนที่แค่อยากรู้ว่า
+ * ที่พักของตัวเองต้องทำอะไร จะชนหน้าเข้าสู่ระบบแล้วปิดไปโดยไม่รู้ว่ามีหน้าประเมิน
+ *
+ * บอกเรื่องข้อมูลไม่หายไว้ตรงนี้เลย เพราะเป็นข้อกังวลที่ทำให้คนไม่กล้ากรอก
+ * ตั้งแต่ยังไม่สมัคร ไม่ใช่เรื่องที่ควรไปเฉลยตอนกรอกเสร็จแล้ว
+ */
+function TryWithoutAccount() {
+  return (
+    <div className="mt-8 border-t border-line pt-6">
+      <p className="text-center text-sm text-ink-muted">ยังไม่พร้อมสมัครสมาชิก?</p>
+      <Link
+        href="/operator/wizard"
+        className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-line bg-canvas px-5 py-3 text-base font-semibold text-ink hover:border-brand-200 hover:bg-brand-50"
+      >
+        <Building2 className="size-5" aria-hidden />
+        ลองประเมินที่พักก่อน
+      </Link>
+      <p className="mt-3 text-center text-sm text-ink-muted">
+        ตอบไม่กี่ข้อ รู้ทันทีว่าที่พักของคุณต้องขอใบอนุญาตหรือไม่ และต้องเตรียมเอกสารอะไรบ้าง
+        ข้อมูลที่กรอกไว้จะอยู่ครบเมื่อคุณสมัครสมาชิกภายหลัง
+      </p>
+    </div>
   );
 }
 
@@ -208,7 +238,7 @@ function DemoAccounts({ onSelect }: { onSelect: (email: string) => void }) {
     ["ผู้ประกอบการ", "operator@example.com"],
     ["เจ้าหน้าที่ท้องถิ่น", "officer@example.com"],
     ["ส่วนกลาง", "central@example.com"],
-    ["ผู้ดูแลระบบ", "admin@example.com"],
+    ["ผู้ดูแลระบบ", "hotlinedoc.info@gmail.com"],
   ];
 
   return (
