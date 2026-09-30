@@ -262,6 +262,24 @@ export function thaiDate(iso: string): string {
   });
 }
 
+/**
+ * จำนวนวันเต็มนับจากเวลาที่ฐานข้อมูลประทับไว้ จนถึงตอนนี้
+ *
+ * ใช้กับการแสดงผลเท่านั้น ตัวเลขที่ผูกกับการตัดสินใจอย่าง `days_waiting`
+ * ของคำขอ เซิร์ฟเวอร์เป็นคนคิดให้อยู่แล้ว ฟังก์ชันนี้ไม่ได้มาแทนของนั้น
+ *
+ * **ข้อควรรู้** คอลัมน์เวลาในฐานข้อมูลเป็น `timestamp without time zone`
+ * และ PostgreSQL ของโปรเจกต์ตั้ง timezone เป็น Asia/Bangkok ค่าที่ส่งมาจึงเป็น
+ * เวลาไทยที่ไม่มีเครื่องหมายบอกเขตเวลาติดมาด้วย JavaScript ตีความสตริงแบบนั้น
+ * เป็น "เวลาท้องถิ่นของเบราว์เซอร์" ซึ่งตรงกันพอดีเมื่อผู้ใช้อยู่ในไทย
+ * ถ้าวันหนึ่งเปลี่ยนคอลัมน์เป็น timezone-aware ต้องกลับมาดูฟังก์ชันนี้ด้วย
+ */
+export function daysSince(iso: string): number {
+  const started = Date.parse(iso);
+  if (Number.isNaN(started)) return 0;
+  return Math.max(Math.floor((Date.now() - started) / 86_400_000), 0);
+}
+
 /** รวมเอกสารทั้งสองหมวดเป็นชุดเดียว เรียงตามที่ backend ส่งมา */
 export function allDocuments(app: Application): RequiredDocument[] {
   return [...app.documents.self_service, ...app.documents.external];

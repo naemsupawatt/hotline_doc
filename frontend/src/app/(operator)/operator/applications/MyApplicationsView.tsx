@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, Plus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -8,9 +8,16 @@ import { Mascot } from "@/components/brand/Mascot";
 import { ListToolbar } from "@/components/common/ListToolbar";
 import { PageHeader } from "@/components/common/PageHeader";
 import { PROGRESS_ACCENT, ProgressTrack } from "@/components/common/ProgressTrack";
+import { DocumentSummary } from "./DocumentSummary";
 import { StatusPill } from "@/components/common/StatusPill";
 import { ApiError } from "@/lib/api";
-import { type ApplicationSummary, myApplications } from "@/lib/applications";
+import {
+  type Application,
+  type ApplicationSummary,
+  allDocuments,
+  getApplication,
+  myApplications,
+} from "@/lib/applications";
 import { type ProgressActor, applicationProgress } from "@/lib/progress";
 import { cn } from "@/lib/utils";
 import type { ApplicationStatus } from "@/types/enums";
@@ -221,39 +228,98 @@ function ApplicationCard({ row }: { row: ApplicationSummary }) {
   const status = row.status as ApplicationStatus;
   const { tone } = applicationProgress(status);
 
+  // โหลดรายการเอกสารตอนกางเท่านั้น ไม่ดึงมาพร้อมรายการตั้งแต่แรก
+  // เพราะคนที่เปิดหน้านี้ส่วนใหญ่มาดูว่าคำขอถึงไหนแล้ว ไม่ได้มาไล่เอกสารทุกใบ
+  // โหลดแล้วเก็บไว้ ปิดแล้วเปิดใหม่จึงไม่ยิงซ้ำ
+  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<Application | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const panelId = `documents-${row.application_no}`;
+
+  async function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (!next || detail !== null || pending) return;
+
+    setPending(true);
+    setError(null);
+    try {
+      setDetail(await getApplication(row.application_no));
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "โหลดรายการเอกสารไม่ได้ กรุณาลองใหม่อีกครั้ง",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
-    <li>
+    <li className="relative overflow-hidden rounded-card border border-line bg-surface shadow-card transition-all hover:border-brand-200 hover:shadow-lift">
+      <span className={cn("absolute inset-y-0 left-0 w-1.5", PROGRESS_ACCENT[tone])} aria-hidden />
+
+      {/* ส่วนหัวยังเป็นลิงก์ทั้งผืนเหมือนเดิม ปุ่มกางย้ายออกมาอยู่นอกลิงก์
+          เพราะวางปุ่มซ้อนในลิงก์เป็น HTML ที่ไม่ถูกต้อง และคีย์บอร์ดจะใช้ไม่ได้ */}
       <Link
         href={`/operator/applications/${row.application_no}`}
-        className="group relative block overflow-hidden rounded-card border border-line bg-surface shadow-card transition-all hover:border-brand-200 hover:shadow-lift"
+        className="group block p-4 pl-5 sm:p-5 sm:pl-6"
       >
-        <span className={cn("absolute inset-y-0 left-0 w-1.5", PROGRESS_ACCENT[tone])} aria-hidden />
-
-        <div className="p-4 pl-5 sm:p-5 sm:pl-6">
-          <div className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <h3 className="text-xl font-bold break-words text-ink group-hover:text-brand-700 sm:text-2xl">
-                  {row.property_name}
-                </h3>
-                <StatusPill kind="application" status={status} size="md" />
-              </div>
-              <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-ink-muted">
-                <span>{row.property_type_name}</span>
-                <span aria-hidden>·</span>
-                <span className="font-mono text-sm">{row.application_no}</span>
-              </p>
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h3 className="text-xl font-bold break-words text-ink group-hover:text-brand-700 sm:text-2xl">
+                {row.property_name}
+              </h3>
+              <StatusPill kind="application" status={status} size="md" />
             </div>
-            <ChevronRight
-              className="mt-1.5 size-6 shrink-0 text-ink-muted transition-colors group-hover:text-brand-600"
-              aria-hidden
-            />
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-ink-muted">
+              <span>{row.property_type_name}</span>
+              <span aria-hidden>·</span>
+              <span className="font-mono text-sm">{row.application_no}</span>
+            </p>
           </div>
-
-          {/* M7: แถบความคืบหน้าตอบว่าเหลือขั้นตอนอะไร ใครถือเรื่อง และค้างมากี่วัน */}
-          <ProgressTrack status={status} daysWaiting={row.days_waiting} className="mt-4" />
+          <ChevronRight
+            className="mt-1.5 size-6 shrink-0 text-ink-muted transition-colors group-hover:text-brand-600"
+            aria-hidden
+          />
         </div>
+
+        {/* M7: แถบความคืบหน้าตอบว่าเหลือขั้นตอนอะไร ใครถือเรื่อง และค้างมากี่วัน */}
+        <ProgressTrack status={status} daysWaiting={row.days_waiting} className="mt-4" />
       </Link>
+
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="flex min-h-12 w-full items-center gap-2 border-t border-line px-4 pl-5 text-sm font-semibold text-brand-700 hover:bg-brand-50 sm:px-5 sm:pl-6"
+      >
+        <FileText className="size-4 shrink-0" aria-hidden />
+        {open ? "ซ่อนรายการเอกสาร" : "ดูเอกสารและสถานะ"}
+        <ChevronDown
+          className={cn("ml-auto size-5 transition-transform", open && "rotate-180")}
+          aria-hidden
+        />
+      </button>
+
+      {open && (
+        <div id={panelId} className="border-t border-line bg-canvas/40 pt-3 pl-1.5">
+          {pending && <p className="px-4 pb-4 text-sm text-ink-muted sm:px-5">กำลังโหลดรายการเอกสาร…</p>}
+
+          {error && (
+            <p
+              role="alert"
+              className="mx-4 mb-4 rounded-xl bg-danger-bg px-4 py-3 text-sm font-medium text-danger-fg sm:mx-5"
+            >
+              {error}
+            </p>
+          )}
+
+          {detail && <DocumentSummary docs={allDocuments(detail)} />}
+        </div>
+      )}
     </li>
   );
 }
