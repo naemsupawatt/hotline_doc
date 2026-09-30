@@ -69,6 +69,18 @@ DOCUMENT_STATUS_OF = {
 # ผลตรวจที่ต้องมีเหตุผลกำกับเสมอ — ผู้ยื่นต้องรู้ว่าต้องแก้อะไร
 NEEDS_COMMENT = {ReviewDecision.REQUEST_REVISION, ReviewDecision.FAIL}
 
+# เอกสารที่ "เจ้าหน้าที่ลงความเห็นไปแล้ว" ไม่ว่าจะผ่านหรือขอให้แก้
+#
+# คือค่าปลายทางทั้งหมดของ DOCUMENT_STATUS_OF ด้านบน — ถ้าวันหนึ่งเพิ่มผลตรวจ
+# แบบใหม่ ต้องมาเพิ่มที่นี่ด้วย ไม่งั้นสัญลักษณ์แจ้งเตือนในคิวจะไม่มีวันหายไป
+#
+# ที่เหลือ (uploaded / officer_reviewing / system_flagged) คือของที่ยังไม่มีใคร
+# ตัดสิน ส่วน not_uploaded ไม่เคยเป็นสถานะของไฟล์จริง จึงไม่ต้องพูดถึงที่นี่
+REVIEWED_DOCUMENT_STATUSES = {
+    DocumentStatus.APPROVED,
+    DocumentStatus.REVISION_REQUESTED,
+}
+
 
 @dataclass(frozen=True)
 class QueueRow:
@@ -76,6 +88,8 @@ class QueueRow:
     property_obj: Property
     classification: ApplicationClassification
     days_waiting: int
+    # จำนวนเอกสารที่ส่งมาแล้วแต่ยังไม่มีผลตรวจ — 0 = ตรวจครบแล้ว
+    unreviewed_documents: int = 0
 
 
 def authority_ids(db: Session, officer: User) -> list[int]:
@@ -149,8 +163,11 @@ def queue(db: Session, officer: User, scope: str = "open") -> list[QueueRow]:
         .order_by(Application.status_changed_at)
     )
 
+    applications = list(db.scalars(query).all())
+    unreviewed = unreviewed_counts(db, applications)
+
     rows: list[QueueRow] = []
-    for application in db.scalars(query).all():
+    for application in applications:
         prop = db.get(Property, application.property_id)
         snapshot = db.scalar(
             select(ApplicationClassification)
@@ -158,9 +175,49 @@ def queue(db: Session, officer: User, scope: str = "open") -> list[QueueRow]:
             .where(ApplicationClassification.application_id == application.id)
         )
         rows.append(
-            QueueRow(application, prop, snapshot, _days_since(application.status_changed_at))
+            QueueRow(
+                application,
+                prop,
+                snapshot,
+                _days_since(application.status_changed_at),
+                unreviewed.get(application.id, 0),
+            )
         )
     return rows
+
+
+def unreviewed_counts(db: Session, applications: list[Application]) -> dict[int, int]:
+    """นับเอกสารที่ยังไม่มีผลตรวจ แยกตามคำขอ
+
+    ใช้ขึ้นสัญลักษณ์แจ้งเตือนในคิว เจ้าหน้าที่จะได้รู้ตั้งแต่หน้ารายการว่าใบไหน
+    ยังมีของค้างให้ตรวจ โดยไม่ต้องเปิดเข้าไปดูทีละใบ
+
+    **ยิงคำสั่งเดียวสำหรับทั้งคิว** ไม่ใช่วนยิงทีละแถว เพราะคิวมีได้หลายสิบใบ
+
+    นับเป็น "จำนวนฉบับ" ไม่ใช่จำนวนไฟล์ เพราะเอกสารฉบับเดียวแนบได้หลายไฟล์
+    (ภาพหลายมุม = คนละ slot) แต่เจ้าหน้าที่นับงานของตัวเองเป็นฉบับ
+
+    ฉบับที่ผู้ยื่นยังไม่ได้อัปโหลดไม่ถูกนับ เพราะไม่มีอะไรให้ตรวจ ถ้านับด้วย
+    สัญลักษณ์จะไม่มีวันหายไปจากคำขอที่มีเอกสารไม่บังคับซึ่งไม่มีใครต้องส่ง
+    """
+    ids = [row.id for row in applications]
+    if not ids:
+        return {}
+
+    rows = db.execute(
+        select(
+            DocumentFile.application_id,
+            func.count(func.distinct(DocumentFile.document_type_id)),
+        )
+        .where(
+            DocumentFile.application_id.in_(ids),
+            DocumentFile.is_current,
+            DocumentFile.status.not_in([s.value for s in REVIEWED_DOCUMENT_STATUSES]),
+        )
+        .group_by(DocumentFile.application_id)
+    ).all()
+
+    return dict(rows)
 
 
 def _days_since(moment: datetime | None) -> int:

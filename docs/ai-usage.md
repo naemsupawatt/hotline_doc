@@ -59,6 +59,9 @@
 | 21 ก.ย. 69 | เชื่อมเอกสารและลายเซ็นกับ Supabase Storage (`services/storage.py`, `direct_upload.py`, API และ `frontend/src/lib/`) | Codex | _ยังไม่ได้ตรวจทาน_ | เพิ่ม private storage, signed upload ผ่าน staging เพื่อรองรับไฟล์เกิน 4.5 MB, ตรวจสิทธิ์และข้อมูลจริงก่อนเก็บรุ่นถาวร, signed download อายุ 60 วินาที, คงไฟล์ local เดิม · เพิ่มสคริปต์ setup/cleanup และคู่มือ deploy · backend ผ่าน 231 เคสในฐานข้อมูลทดสอบชั่วคราว, Ruff/TypeScript/ESLint ผ่าน, production build ผ่านด้วย Webpack (Turbopack เปิดพอร์ตไม่ได้ในสภาพแวดล้อมทดสอบ) · ยังไม่ได้สร้าง bucket/ทดสอบ Storage จริงหรือ deploy เพราะรอ Secret key |
 | 30 ก.ย. 69 | ประเมินก่อนสมัครสมาชิกแล้วคำตอบตามไปด้วย (`lib/draftAssessment.ts`, `WizardView`, ปุ่มทางเข้าใน `LoginView`/`RegisterView`) | Claude Code | _ยังไม่ได้ตรวจทาน_ | เก็บใน localStorage ไม่แตะฐานข้อมูล ดู `decisions.md` ข้อ 19 |
 | 1 ต.ค. 69 | กางดูเอกสารพร้อมสถานะ/วันที่ส่ง/วันที่รอ ในหน้าคำขอของฉัน (`DocumentSummary.tsx`, `documentTiming` ใน `lib/documents.ts`) | Claude Code | _ยังไม่ได้ตรวจทาน_ | ใช้ endpoint เดิม ไม่แตะ backend |
+| 1 ต.ค. 69 | สัญลักษณ์แจ้งเตือนเอกสารค้างตรวจบนคิวเจ้าหน้าที่ (`unreviewed_counts` ใน `services/officer.py`, `UnreviewedFlag` ใน `QueueView.tsx`) | Claude Code | _ยังไม่ได้ตรวจทาน_ | เทสต์เพิ่ม 4 เคส รวมเป็น 235 |
+| 1 ต.ค. 69 | หน้าส่วนกลาง "เอกสารที่ค้างตรวจ" (`document_bottlenecks` ใน `services/reports.py`, `/central/documents`) | Claude Code | _ยังไม่ได้ตรวจทาน_ | ใช้นิยาม "ตรวจแล้ว" ร่วมกับคิวเจ้าหน้าที่ เทสต์เพิ่ม 5 เคส รวม 240 |
+| 1 ต.ค. 69 | หน้าส่วนกลาง "เอกสารที่ยังไม่ส่ง" (`missing_uploads` ใน `services/reports.py`, `/central/missing-documents`) + แยกโครงหน้าจอที่ใช้ร่วมกับหน้าคอขวดไป `components/common/DocumentReport.tsx` | Claude Code | _ยังไม่ได้ตรวจทาน_ | เทสต์เพิ่ม 5 เคส รวม 245 |
 
 > **ค้างตรวจทาน** — ทั้ง 20 รายการข้างบนยังไม่มีใครในทีมอ่านจนอธิบายได้
 > จุดที่ต้องเข้าใจให้ได้ก่อนนำเสนอคือ **ทำไมกฎประเภท 1/2 ถึงไม่กำหนด `min_rooms`**

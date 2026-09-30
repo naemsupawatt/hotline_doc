@@ -18,6 +18,8 @@ export type QueueItem = {
   property_type_name: string;
   local_authority_name: string;
   submitted_at: string | null;
+  /** เอกสารที่ส่งมาแล้วแต่ยังไม่มีผลตรวจ — 0 = ตรวจครบแล้ว (คิวใช้ขึ้นสัญลักษณ์แจ้งเตือน) */
+  unreviewed_documents: number;
 };
 
 export type OfficerApplication = {

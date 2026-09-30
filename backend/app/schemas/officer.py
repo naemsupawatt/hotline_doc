@@ -23,6 +23,14 @@ class QueueItemOut(BaseModel):
     property_type_name: str = Field(examples=["ไม่เข้าข่ายโรงแรม"])
     local_authority_name: str = Field(examples=["เทศบาลตำบลกะรน"])
     submitted_at: datetime | None = Field(default=None, examples=["2026-09-19T21:30:00+07:00"])
+    unreviewed_documents: int = Field(
+        default=0,
+        examples=[2],
+        description=(
+            "เอกสารที่ผู้ยื่นส่งมาแล้วแต่ยังไม่มีผลตรวจ (ยังไม่ผ่านและยังไม่ได้ขอให้แก้ไข) "
+            "หน้าคิวใช้ค่านี้ขึ้นสัญลักษณ์แจ้งเตือน 0 = ตรวจครบทุกฉบับแล้ว"
+        ),
+    )
 
 
 class OfficerApplicationOut(BaseModel):

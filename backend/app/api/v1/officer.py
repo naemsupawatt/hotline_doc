@@ -91,6 +91,7 @@ def queue(
             ),
             local_authority_name=authorities.get(row.application.local_authority_id, "-"),
             submitted_at=row.application.submitted_at,
+            unreviewed_documents=row.unreviewed_documents,
         )
         for row in rows
     ]

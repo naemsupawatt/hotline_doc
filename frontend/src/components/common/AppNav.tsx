@@ -6,6 +6,8 @@ import {
   ChartNoAxesCombined,
   ClipboardList,
   FileCheck2,
+  FileStack,
+  Inbox,
   LogOut,
   Menu,
   Settings2,
@@ -44,6 +46,16 @@ const LINKS: Record<
       href: "/central/overview",
       label: "ภาพรวมทั้งจังหวัด",
       icon: ChartNoAxesCombined,
+    },
+    {
+      href: "/central/documents",
+      label: "เอกสารที่ค้างตรวจ",
+      icon: FileStack,
+    },
+    {
+      href: "/central/missing-documents",
+      label: "เอกสารที่ยังไม่ส่ง",
+      icon: Inbox,
     },
   ],
   super_admin: [

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, Clock, Inbox, MapPin } from "lucide-react";
+import { Bell, ChevronRight, Clock, Inbox, MapPin } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -164,6 +164,7 @@ export function QueueView() {
                       {row.application_no}
                     </span>
                     <StatusPill kind="application" status={row.status as ApplicationStatus} />
+                    <UnreviewedFlag count={row.unreviewed_documents} />
                   </div>
                   <p className="mt-2 text-lg font-semibold break-words text-ink group-hover:text-brand-700">{row.property_name}</p>
                   <p className="mt-0.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-muted">
@@ -201,5 +202,27 @@ export function QueueView() {
         </p>
       )}
     </main>
+  );
+}
+
+
+/**
+ * สัญลักษณ์แจ้งเตือนว่าคำขอใบนี้ยังมีเอกสารที่ไม่มีใครลงความเห็น
+ *
+ * "ตรวจแล้ว" นับรวมทั้งผ่านและขอให้แก้ไข — เจ้าหน้าที่ลงความเห็นไปแล้วทั้งคู่
+ * ตัวเลขมาจากเซิร์ฟเวอร์ (`unreviewed_documents`) หน้าจอไม่ได้ไล่นับสถานะเอง
+ * กติกาว่าสถานะไหนคือ "ตรวจแล้ว" อยู่ที่ `REVIEWED_DOCUMENT_STATUSES`
+ * ใน `backend/app/services/officer.py` ที่เดียว
+ *
+ * มีตัวหนังสือกำกับเสมอ ไม่ได้สื่อความหมายด้วยไอคอนหรือสีลำพัง
+ */
+function UnreviewedFlag({ count }: { count: number }) {
+  if (count <= 0) return null;
+
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-warn-bg px-2.5 py-1 text-xs font-semibold text-warn-fg">
+      <Bell className="size-3.5 shrink-0" aria-hidden />
+      ยังไม่ได้ตรวจ {count.toLocaleString("th-TH")} ฉบับ
+    </span>
   );
 }

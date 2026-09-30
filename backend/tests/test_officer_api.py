@@ -335,6 +335,115 @@ def test_revision_reason_reaches_the_person_who_has_to_fix_it(client, owner, off
     assert body["decision_reason"] == "สำเนาทะเบียนบ้านเบลอ อ่านเลขที่บ้านไม่ออก"
 
 
+def queue_row(client, officer_token, no: str, scope: str = "open") -> dict:
+    rows = client.get(f"/api/v1/officer/queue?scope={scope}", headers=auth(officer_token)).json()
+    return next(r for r in rows if r["application_no"] == no)
+
+
+def review(client, officer_token, no: str, file_id: int, decision: str, reason: str | None = None):
+    payload: dict = {"decision": decision}
+    if reason is not None:
+        payload["comment"] = reason
+    return client.post(
+        f"/api/v1/officer/applications/{no}/documents/{file_id}/review",
+        headers=auth(officer_token),
+        json=payload,
+    )
+
+
+def test_queue_counts_documents_that_nobody_has_reviewed_yet(client, owner, officer_a):
+    """สัญลักษณ์แจ้งเตือนในคิวต้องบอกได้ตั้งแต่หน้ารายการว่าใบไหนยังมีของค้างตรวจ
+
+    นับเป็นจำนวน "ฉบับ" ไม่ใช่จำนวนไฟล์ และต้องลดลงทุกครั้งที่ตรวจไปหนึ่งฉบับ
+    จนเหลือศูนย์เมื่อตรวจครบ (ศูนย์ = หน้าจอซ่อนสัญลักษณ์)
+    """
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    ids = file_ids(client, officer_a, no)
+    assert len(ids) > 1, "เคสนี้ต้องมีเอกสารหลายฉบับ ไม่งั้นการนับลดทีละฉบับไม่ได้ทดสอบอะไร"
+    assert queue_row(client, officer_a, no)["unreviewed_documents"] == len(ids)
+
+    remaining = len(ids)
+    for file_id in ids.values():
+        assert review(client, officer_a, no, file_id, "pass").status_code == 200
+        remaining -= 1
+        assert queue_row(client, officer_a, no)["unreviewed_documents"] == remaining
+
+    assert queue_row(client, officer_a, no)["unreviewed_documents"] == 0
+
+
+def test_asking_for_a_revision_counts_as_reviewed_too(client, owner, officer_a):
+    """การขอให้แก้ไขก็คือเจ้าหน้าที่ลงความเห็นแล้ว สัญลักษณ์ต้องหายไปเหมือนกัน
+
+    ถ้านับเฉพาะฉบับที่ผ่าน เจ้าหน้าที่จะเห็นเตือนค้างอยู่ทั้งที่ตรวจครบทุกฉบับแล้ว
+    และไม่มีอะไรให้ทำต่อจนกว่าผู้ยื่นจะส่งกลับมา
+    """
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    first, *rest = file_ids(client, officer_a, no).values()
+    assert review(client, officer_a, no, first, "request_revision", "ภาพไม่ชัด").status_code == 200
+    for file_id in rest:
+        assert review(client, officer_a, no, file_id, "pass").status_code == 200
+
+    assert queue_row(client, officer_a, no)["unreviewed_documents"] == 0
+
+
+def test_new_version_from_the_operator_puts_the_document_back_in_the_queue(
+    client, owner, officer_a
+):
+    """ผู้ยื่นส่งไฟล์ใหม่ = มีของให้ตรวจอีกครั้ง สัญลักษณ์ต้องกลับมา
+
+    เป็นวงจรจริงของ T-08 ถ้าสัญลักษณ์ไม่กลับมา เอกสารที่ส่งแก้แล้วจะถูกลืม
+    """
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    for file_id in file_ids(client, officer_a, no).values():
+        review(client, officer_a, no, file_id, "pass")
+    assert queue_row(client, officer_a, no)["unreviewed_documents"] == 0
+
+    client.post(
+        f"/api/v1/officer/applications/{no}/decide",
+        headers=auth(officer_a),
+        json={"decision": "request_revision", "reason": "ขอสำเนาที่ชัดกว่านี้"},
+    )
+    client.post(
+        f"/api/v1/applications/{no}/documents/A02",
+        headers=auth(owner),
+        files={"file": ("fixed.pdf", PDF, "application/pdf")},
+    )
+
+    # อยู่แท็บ "รอผู้ยื่นแก้ไข" จนกว่าจะกดยื่นกลับ จึงต้องดูที่ scope นั้น
+    assert queue_row(client, officer_a, no, "revision")["unreviewed_documents"] == 1
+
+    client.post(f"/api/v1/applications/{no}/submit", headers=auth(owner))
+    assert queue_row(client, officer_a, no)["unreviewed_documents"] == 1
+
+
+def test_documents_nobody_uploaded_do_not_raise_the_flag(client, owner, officer_a):
+    """ฉบับที่ไม่บังคับและไม่มีใครส่ง ต้องไม่ถูกนับว่า "ค้างตรวจ"
+
+    ถ้านับด้วย สัญลักษณ์จะไม่มีวันหายไปจากคำขอที่มีเอกสารไม่บังคับอยู่ในรายการ
+
+    ใช้ประเภทที่ 1 (8 ห้อง 36 คน) เพราะช่องแนบใน ร.ร.1 (A07-A09) ไม่บังคับ
+    จึงมีฉบับที่ไม่มีไฟล์ค้างอยู่จริงให้ทดสอบ ต่างจากกรณีไม่เข้าข่ายโรงแรม
+    ที่เอกสารบังคับทั้งหมด
+    """
+    no = open_application(client, owner, "PKT-CITY", rooms=8, guests=36)
+    fill_and_submit(client, owner, no)
+
+    body = client.get(f"/api/v1/officer/applications/{no}", headers=auth(officer_a)).json()
+    docs = body["documents"]["self_service"] + body["documents"]["external"]
+    assert any(not d["files"] for d in docs), "เคสนี้ต้องมีฉบับที่ยังไม่มีไฟล์จึงจะทดสอบได้"
+
+    for file_id in file_ids(client, officer_a, no).values():
+        review(client, officer_a, no, file_id, "pass")
+
+    assert queue_row(client, officer_a, no)["unreviewed_documents"] == 0
+
+
 def test_queue_rejects_an_unknown_scope(client, officer_a):
     res = client.get("/api/v1/officer/queue?scope=mystery", headers=auth(officer_a))
     assert res.status_code == 422
@@ -815,6 +924,260 @@ def test_m11_is_read_only_summary_without_personal_data(client, owner, officer_a
     raw = client.get("/api/v1/reports/overview", headers=auth(central)).text
     assert no not in raw, "เลขที่คำขอต้องไม่หลุดไปในรายงานภาพรวม"
     assert "ที่พักเขต" not in raw, "ชื่อสถานที่ต้องไม่หลุดไปในรายงานภาพรวม"
+
+
+def central_token(client) -> str:
+    return client.post(
+        "/api/v1/auth/login",
+        json={"identifier": "central@example.com", "password": "demo1234"},
+    ).json()["access_token"]
+
+
+def bottlenecks(client, token) -> dict[str, dict]:
+    rows = client.get("/api/v1/reports/document-bottlenecks", headers=auth(token)).json()
+    return {row["code"]: row for row in rows}
+
+
+def authority_name(client, code: str) -> str:
+    return next(
+        a["name"] for a in client.get("/api/v1/wizard/local-authorities").json()
+        if a["code"] == code
+    )
+
+
+def test_document_bottlenecks_rank_the_documents_that_block_the_most(client, owner, officer_a):
+    """ส่วนกลางต้องรู้ว่าเอกสารฉบับไหนเป็นคอขวด ไม่ใช่แค่ว่าคำขอค้างที่ขั้นตอนใด
+
+    วัดเป็นส่วนต่างจากค่าตั้งต้น เพราะฐานข้อมูลที่ใช้สาธิตอาจมีคำขอค้างอยู่ก่อนแล้ว
+    การยืนยันด้วยตัวเลขสัมบูรณ์จะล้มทันทีที่มีใครเปิดคำขอทิ้งไว้
+    """
+    central = central_token(client)
+    before = bottlenecks(client, central)
+
+    first = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, first)
+    second = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, second)
+
+    # ตรวจไปหนึ่งฉบับของใบแรก ฉบับนั้นจึงควรค้างน้อยกว่าฉบับอื่นอยู่หนึ่งใบ
+    ids = file_ids(client, officer_a, first)
+    reviewed_code = next(iter(ids))
+    assert review(client, officer_a, first, ids[reviewed_code], "pass").status_code == 200
+
+    after = bottlenecks(client, central)
+
+    def delta(code: str) -> int:
+        return after.get(code, {}).get("count", 0) - before.get(code, {}).get("count", 0)
+
+    others = [code for code in ids if code != reviewed_code]
+    assert others, "เคสนี้ต้องมีเอกสารมากกว่าหนึ่งฉบับจึงจะเทียบลำดับได้"
+    assert delta(reviewed_code) == 1, "ตรวจไปแล้วหนึ่งใบ ต้องเหลือค้างแค่ใบที่สอง"
+    for code in others:
+        assert delta(code) == 2, f"{code} ต้องค้างทั้งสองใบ"
+
+    rows = client.get("/api/v1/reports/document-bottlenecks", headers=auth(central)).json()
+    counts = [row["count"] for row in rows]
+    assert counts == sorted(counts, reverse=True), "ต้องเรียงจากฉบับที่ติดขัดมากที่สุด"
+
+
+def test_document_bottlenecks_show_which_area_is_stuck(client, owner, officer_a):
+    """"ติดขัดตรงไหนบ้าง" ต้องตอบได้ถึงระดับท้องถิ่น ไม่ใช่แค่ยอดรวมทั้งจังหวัด
+
+    เอกสารฉบับเดียวค้างทุกเขต = ปัญหาอยู่ที่ตัวเอกสาร
+    หลายฉบับค้างกระจุกเขตเดียว = เขตนั้นมีปัญหากำลังคน คนละทางแก้กัน
+    """
+    central = central_token(client)
+
+    here = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, here)
+    there = open_application(client, owner, "KRN-SUB")
+    fill_and_submit(client, owner, there)
+
+    rows = client.get("/api/v1/reports/document-bottlenecks", headers=auth(central)).json()
+    assert rows, "ต้องมีเอกสารค้างอยู่อย่างน้อยหนึ่งฉบับ"
+
+    for row in rows:
+        assert sum(b["count"] for b in row["by_authority"]) == row["count"], (
+            f"{row['code']}: ยอดรวมรายเขตต้องเท่ากับยอดรวมของฉบับนั้น"
+        )
+        counts = [b["count"] for b in row["by_authority"]]
+        assert counts == sorted(counts, reverse=True), "ในแต่ละฉบับ เขตที่ค้างมากสุดต้องขึ้นก่อน"
+
+    both = {authority_name(client, "PKT-CITY"), authority_name(client, "KRN-SUB")}
+    assert any(both <= {b["label"] for b in row["by_authority"]} for row in rows), (
+        "เอกสารที่ค้างทั้งสองเขต ต้องแสดงทั้งสองเขตอยู่ในฉบับเดียวกัน"
+    )
+
+
+def test_decided_applications_are_not_counted_as_bottlenecks(client, owner, officer_a):
+    """คำขอที่ตัดสินไปแล้วไม่ใช่คอขวด เพราะไม่มีใครรออะไรอยู่
+
+    และเจ้าหน้าที่ย้อนกลับไปตรวจเอกสารของคำขอที่ปิดแล้วไม่ได้ด้วย
+    ถ้ายังนับอยู่ ตัวเลขจะพองขึ้นเรื่อย ๆ จนใช้วิเคราะห์อะไรไม่ได้
+    """
+    central = central_token(client)
+    before = bottlenecks(client, central)
+
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+    codes = list(file_ids(client, officer_a, no))
+    assert any(bottlenecks(client, central).get(code) for code in codes), "ยื่นแล้วต้องขึ้นเป็นคอขวดก่อน"
+
+    approve_fully(client, owner, officer_a, no)
+    after = bottlenecks(client, central)
+
+    for code in codes:
+        assert after.get(code, {}).get("count", 0) == before.get(code, {}).get("count", 0), (
+            f"{code} ต้องหลุดออกจากรายการคอขวดหลังคำขอถูกอนุมัติ"
+        )
+
+
+def test_document_bottlenecks_keep_the_report_anonymous(client, owner, officer_a):
+    """ยังอยู่ใต้กติกาเดิมของหน้าส่วนกลาง: สรุปล้วน ไม่มีข้อมูลรายคำขอ"""
+    no = open_application(client, owner, "PKT-CITY")
+    fill_and_submit(client, owner, no)
+
+    raw = client.get(
+        "/api/v1/reports/document-bottlenecks", headers=auth(central_token(client))
+    ).text
+    assert no not in raw, "เลขที่คำขอต้องไม่หลุดไปในรายงาน"
+    assert "ที่พักเขต" not in raw, "ชื่อสถานที่ต้องไม่หลุดไปในรายงาน"
+
+
+def missing_uploads(client, token) -> dict[str, dict]:
+    rows = client.get("/api/v1/reports/missing-uploads", headers=auth(token)).json()
+    return {row["code"]: row for row in rows}
+
+
+def required_of(client, owner_token, no: str) -> list[dict]:
+    detail = client.get(f"/api/v1/applications/{no}", headers=auth(owner_token)).json()
+    return detail["documents"]["self_service"] + detail["documents"]["external"]
+
+
+def test_missing_uploads_count_what_the_operator_has_not_sent_yet(client, owner):
+    """ส่วนกลางต้องเห็นว่าผู้ประกอบการติดตรงเอกสารฉบับไหนจนยังส่งเข้ามาไม่ได้
+
+    ร่างที่ยังไม่แนบอะไรเลย ต้องทำให้ทุกฉบับที่ประเภทนั้นต้องใช้ ขาดเพิ่มหนึ่งใบ
+    """
+    central = central_token(client)
+    before = missing_uploads(client, central)
+
+    no = open_application(client, owner, "PKT-CITY")
+    documents = required_of(client, owner, no)
+    assert documents, "คำขอต้องมีรายการเอกสารที่ต้องใช้"
+
+    after = missing_uploads(client, central)
+
+    for doc in documents:
+        code = doc["code"]
+        was = before.get(code, {}).get("count", 0)
+        now = after.get(code, {}).get("count", 0)
+        assert now == was + 1, f"{code} ต้องนับว่ายังไม่ได้ส่งเพิ่มอีกหนึ่งใบ"
+
+        # ฉบับบังคับต้องถูกนับแยกไว้ด้วย ฉบับไม่บังคับต้องไม่ไปเพิ่มยอดบังคับ
+        was_mandatory = before.get(code, {}).get("mandatory_count", 0)
+        now_mandatory = after.get(code, {}).get("mandatory_count", 0)
+        assert now_mandatory == was_mandatory + (1 if doc["is_mandatory"] else 0), code
+
+
+def test_uploading_takes_the_document_off_the_missing_list(client, owner):
+    """แนบแล้วต้องหลุดออกจากรายการทันที ไม่งั้นตัวเลขจะค้างจนใช้วิเคราะห์ไม่ได้"""
+    central = central_token(client)
+
+    no = open_application(client, owner, "PKT-CITY")
+    documents = required_of(client, owner, no)
+    target = next(d for d in documents if d["accepted_mime"] == ["application/pdf"])
+
+    before = missing_uploads(client, central)
+    res = client.post(
+        f"/api/v1/applications/{no}/documents/{target['code']}",
+        headers=auth(owner),
+        files={"file": ("doc.pdf", PDF, "application/pdf")},
+    )
+    assert res.status_code == 201, res.text
+    after = missing_uploads(client, central)
+
+    assert after.get(target["code"], {}).get("count", 0) == (
+        before.get(target["code"], {}).get("count", 0) - 1
+    ), "ฉบับที่เพิ่งแนบต้องหายออกจากรายการที่ยังไม่ได้ส่ง"
+
+    # ฉบับอื่นของคำขอเดียวกันต้องยังค้างอยู่เท่าเดิม
+    for doc in documents:
+        if doc["code"] == target["code"]:
+            continue
+        assert after.get(doc["code"], {}).get("count", 0) == (
+            before.get(doc["code"], {}).get("count", 0)
+        ), doc["code"]
+
+
+def test_optional_attachments_do_not_inflate_the_mandatory_figure(client, owner):
+    """ช่องแนบใน ร.ร.1 ไม่บังคับ เพราะบางรูปแบบกิจการไม่มีจริง (บุคคลธรรมดา)
+
+    ฉบับพวกนี้ต้องไม่ไปพองยอด "บังคับ" ไม่งั้นส่วนกลางจะอ่านว่าผู้ยื่นทิ้งงาน
+    ทั้งที่แนบครบทุกฉบับที่ต้องแนบแล้ว
+    """
+    central = central_token(client)
+    before = missing_uploads(client, central)
+
+    no = open_application(client, owner, "PKT-CITY", rooms=8, guests=36)
+    fill_and_submit(client, owner, no)
+
+    optional = [d for d in required_of(client, owner, no) if not d["is_mandatory"]]
+    assert optional, "ประเภทที่ 1 ต้องมีช่องแนบที่ไม่บังคับจึงจะทดสอบได้"
+
+    after = missing_uploads(client, central)
+    for doc in optional:
+        code = doc["code"]
+        assert after.get(code, {}).get("count", 0) == (
+            before.get(code, {}).get("count", 0) + 1
+        ), f"{code} ยังไม่ได้แนบ ต้องนับรวมในยอดทั้งหมด"
+        assert after.get(code, {}).get("mandatory_count", 0) == (
+            before.get(code, {}).get("mandatory_count", 0)
+        ), f"{code} ไม่บังคับ ต้องไม่ไปเพิ่มยอดบังคับ"
+
+
+def test_decided_applications_drop_off_the_missing_list(client, owner, officer_a):
+    """คำขอที่ตัดสินไปแล้วไม่นับ เพราะไม่มีใครต้องส่งอะไรเพิ่มอีก"""
+    central = central_token(client)
+    before = missing_uploads(client, central)
+
+    no = open_application(client, owner, "PKT-CITY", rooms=8, guests=36)
+    fill_and_submit(client, owner, no)
+    optional = [d["code"] for d in required_of(client, owner, no) if not d["is_mandatory"]]
+    assert missing_uploads(client, central).get(optional[0], {}).get("count", 0) > (
+        before.get(optional[0], {}).get("count", 0)
+    ), "ระหว่างยังไม่ตัดสิน ต้องนับอยู่ก่อน"
+
+    approve_fully(client, owner, officer_a, no)
+    issue(client, officer_a, no)
+
+    after = missing_uploads(client, central)
+    for code in optional:
+        assert after.get(code, {}).get("count", 0) == before.get(code, {}).get("count", 0), (
+            f"{code} ต้องหลุดออกหลังคำขอถูกตัดสินและออกเอกสารแล้ว"
+        )
+
+
+def test_missing_uploads_stay_anonymous_and_central_only(client, owner, officer_a):
+    """กติกาเดิมของหน้าส่วนกลาง: สรุปล้วน และเปิดเฉพาะ central กับผู้ดูแลระบบ"""
+    no = open_application(client, owner, "PKT-CITY")
+
+    url = "/api/v1/reports/missing-uploads"
+    raw = client.get(url, headers=auth(central_token(client))).text
+    assert no not in raw, "เลขที่คำขอต้องไม่หลุดไปในรายงาน"
+    assert "ที่พักเขต" not in raw, "ชื่อสถานที่ต้องไม่หลุดไปในรายงาน"
+
+    assert client.get(url, headers=auth(owner)).status_code == 403
+    assert client.get(url, headers=auth(officer_a)).status_code == 403
+    assert client.get(url).status_code == 401
+
+
+def test_document_bottlenecks_are_restricted_to_central_and_admin(client, owner, officer_a):
+    """เจ้าหน้าที่ท้องถิ่นเห็นรายงานข้ามเขตไม่ได้ แม้จะเป็นแค่ตัวเลขรวม (T-09)"""
+    url = "/api/v1/reports/document-bottlenecks"
+    assert client.get(url, headers=auth(owner)).status_code == 403
+    assert client.get(url, headers=auth(officer_a)).status_code == 403
+    assert client.get(url).status_code == 401
 
 
 def test_m11_is_restricted_to_central_and_admin(client, owner, officer_a):
